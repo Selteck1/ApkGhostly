@@ -26,6 +26,7 @@ jobs:
 
       - name: Restore embedded intro video
         run: |
+          mkdir -p app/src/main/res/raw
           base64 --decode assets/ghostly_intro.mp4.b64 > app/src/main/res/raw/ghostly_intro.mp4
 
       - name: Validate intro video
