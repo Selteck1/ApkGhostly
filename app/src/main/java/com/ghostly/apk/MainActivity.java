@@ -1,432 +1,63 @@
 package com.ghostly.apk;
 
-import android.app.Activity;
-import android.graphics.Color;
-import android.graphics.Typeface;
+import android.app.*;
+import android.os.*;
+import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
-import android.os.Bundle;
-import android.os.Handler;
 import android.text.InputType;
-import android.view.Gravity;
-import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
-import android.widget.VideoView;
-
+import android.view.*;
+import android.widget.*;
 import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.*;
+import java.net.*;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
-    private final Handler handler = new Handler();
-    private boolean introFinished = false;
+  int BG=Color.rgb(7,4,13), CARD=Color.rgb(20,13,31), PURPLE=Color.rgb(190,125,255), SOFT=Color.rgb(225,219,235);
+  android.content.SharedPreferences p;
 
-    private final int bg = Color.rgb(7, 4, 13);
-    private final int card = Color.rgb(18, 12, 29);
-    private final int purple = Color.rgb(192, 130, 255);
-    private final int soft = Color.rgb(224, 218, 235);
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().setFlags(
-                WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                WindowManager.LayoutParams.FLAG_FULLSCREEN
-        );
-
-        hideSystemUi();
-        showIntro();
-    }
-
-    private void hideSystemUi() {
-        getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        );
-    }
-
-    private void showIntro() {
-        VideoView video = new VideoView(this);
-        video.setBackgroundColor(Color.BLACK);
-        video.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-        ));
-
-        setContentView(video);
-
-        Uri uri = Uri.parse(
-                "android.resource://" + getPackageName() + "/" + R.raw.ghostly_intro
-        );
-        video.setVideoURI(uri);
-
-        video.setOnCompletionListener(mp -> showServerGate());
-        video.setOnErrorListener((mp, what, extra) -> {
-            showServerGate();
-            return true;
-        });
-
-        video.start();
-        handler.postDelayed(this::showServerGate, 15500);
-    }
-
-    private void showServerGate() {
-        if (introFinished) {
-            return;
-        }
-        introFinished = true;
-        handler.removeCallbacksAndMessages(null);
-        hideSystemUi();
-
-        LinearLayout root = baseColumn();
-        root.addView(makeText("👻 GHOSTLY", 34, true), matchWrap());
-
-        TextView title = makeText("Standoff 2 • статистика", 27, true);
-        title.setTextColor(Color.WHITE);
-        LinearLayout.LayoutParams titleParams = matchWrap();
-        titleParams.topMargin = 28;
-        root.addView(title, titleParams);
-
-        TextView status = makeText("🟣 Подключение к Ghostly API...", 19, false);
-        status.setTextColor(soft);
-        LinearLayout.LayoutParams statusParams = matchWrap();
-        statusParams.topMargin = 24;
-        root.addView(status, statusParams);
-
-        Button retry = new Button(this);
-        retry.setText("🔄 Повторить");
-        retry.setVisibility(View.GONE);
-        LinearLayout.LayoutParams retryParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        retryParams.topMargin = 24;
-        root.addView(retry, retryParams);
-
-        retry.setOnClickListener(v -> checkServer(status, retry));
-        setContentView(root);
-
-        checkServer(status, retry);
-    }
-
-    private void checkServer(TextView status, Button retry) {
-        status.setText("🟣 Подключение к Ghostly API...");
-        status.setTextColor(soft);
-        retry.setVisibility(View.GONE);
-
-        new Thread(() -> {
-            HttpURLConnection connection = null;
-            try {
-                URL url = new URL(getString(R.string.server_url) + "/api/health");
-                connection = open(url);
-                int code = connection.getResponseCode();
-                if (code != 200) {
-                    throw new IllegalStateException("HTTP " + code);
-                }
-
-                JSONObject json = readJson(connection);
-                boolean apiReady = json.optBoolean("standoff2_api", false);
-
-                handler.post(() -> {
-                    if (apiReady) {
-                        showStatsScreen();
-                    } else {
-                        status.setText(
-                                "✅ Ghostly API работает\n\n" +
-                                "⚠️ API Standoff 2 ещё не настроен\n\n" +
-                                "Добавь STANDOFF2_HANDSHAKE на сервере."
-                        );
-                        status.setTextColor(Color.rgb(255, 220, 150));
-                        retry.setVisibility(View.VISIBLE);
-                    }
-                });
-            } catch (Exception e) {
-                handler.post(() -> {
-                    status.setText(
-                            "❌ Ghostly API недоступен\n\n" +
-                            "Запусти сервер и повтори проверку.\n\n" +
-                            "Адрес: " + getString(R.string.server_url)
-                    );
-                    status.setTextColor(Color.rgb(255, 145, 145));
-                    retry.setVisibility(View.VISIBLE);
-                });
-            } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
-            }
-        }).start();
-    }
-
-    private void showStatsScreen() {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(bg);
-
-        LinearLayout root = baseColumn();
-        root.setPadding(28, 34, 28, 40);
-
-        TextView logo = makeText("👻 GHOSTLY", 30, true);
-        logo.setTextColor(purple);
-        root.addView(logo, matchWrap());
-
-        TextView title = makeText("STANDOFF 2", 23, true);
-        title.setTextColor(Color.WHITE);
-        LinearLayout.LayoutParams titleParams = matchWrap();
-        titleParams.topMargin = 8;
-        root.addView(title, titleParams);
-
-        TextView subtitle = makeText("Проверка статистики игрока по ID", 16, false);
-        subtitle.setTextColor(soft);
-        LinearLayout.LayoutParams subtitleParams = matchWrap();
-        subtitleParams.topMargin = 6;
-        root.addView(subtitle, subtitleParams);
-
-        EditText idInput = new EditText(this);
-        idInput.setHint("Standoff 2 ID");
-        idInput.setHintTextColor(Color.rgb(140, 130, 155));
-        idInput.setTextColor(Color.WHITE);
-        idInput.setTextSize(18);
-        idInput.setSingleLine(true);
-        idInput.setInputType(InputType.TYPE_CLASS_NUMBER);
-        idInput.setPadding(26, 18, 26, 18);
-        idInput.setBackground(roundBg(card, 22));
-        LinearLayout.LayoutParams inputParams = matchWrap();
-        inputParams.topMargin = 24;
-        root.addView(idInput, inputParams);
-
-        Button check = new Button(this);
-        check.setText("🔎 Проверить игрока");
-        LinearLayout.LayoutParams checkParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        checkParams.topMargin = 14;
-        root.addView(check, checkParams);
-
-        TextView state = makeText("Введите ID игрока", 16, false);
-        state.setTextColor(soft);
-        LinearLayout.LayoutParams stateParams = matchWrap();
-        stateParams.topMargin = 16;
-        root.addView(state, stateParams);
-
-        LinearLayout resultCard = new LinearLayout(this);
-        resultCard.setOrientation(LinearLayout.VERTICAL);
-        resultCard.setPadding(22, 22, 22, 22);
-        resultCard.setBackground(roundBg(card, 22));
-        resultCard.setVisibility(View.GONE);
-        LinearLayout.LayoutParams resultParams = matchWrap();
-        resultParams.topMargin = 18;
-        root.addView(resultCard, resultParams);
-
-        check.setOnClickListener(v -> {
-            String id = idInput.getText().toString().trim();
-            if (!id.matches("\\d{3,20}")) {
-                state.setText("❌ ID должен содержать только цифры.");
-                state.setTextColor(Color.rgb(255, 145, 145));
-                resultCard.setVisibility(View.GONE);
-                return;
-            }
-
-            check.setEnabled(false);
-            state.setText("🟣 Получаем данные игрока...");
-            state.setTextColor(soft);
-            resultCard.setVisibility(View.GONE);
-
-            new Thread(() -> loadPlayer(
-                    id,
-                    state,
-                    resultCard,
-                    check
-            )).start();
-        });
-
-        scroll.addView(root);
-        setContentView(scroll);
-    }
-
-    private void loadPlayer(
-            String playerId,
-            TextView state,
-            LinearLayout resultCard,
-            Button check
-    ) {
-        HttpURLConnection connection = null;
-
-        try {
-            URL url = new URL(
-                    getString(R.string.server_url) + "/api/player/" + playerId
-            );
-            connection = open(url);
-
-            int code = connection.getResponseCode();
-            JSONObject json = readJson(connection);
-
-            if (code != 200 || !json.optBoolean("ok", false)) {
-                String error = json.optString("error", "Неизвестная ошибка");
-                throw new IllegalStateException(error);
-            }
-
-            JSONObject data = json.getJSONObject("data");
-
-            handler.post(() -> {
-                state.setText("✅ Данные получены");
-                state.setTextColor(Color.rgb(180, 255, 195));
-                renderPlayer(resultCard, data);
-                check.setEnabled(true);
-            });
-        } catch (Exception e) {
-            handler.post(() -> {
-                state.setText("❌ " + e.getMessage());
-                state.setTextColor(Color.rgb(255, 145, 145));
-                check.setEnabled(true);
-            });
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
-
-    private void renderPlayer(LinearLayout cardView, JSONObject data) {
-        cardView.removeAllViews();
-        cardView.setVisibility(View.VISIBLE);
-
-        String nickname = value(data, "nickname");
-        String id = value(data, "id");
-        String level = value(data, "level");
-        String rating = value(data, "rating");
-        String matches = value(data, "matches");
-        String wins = value(data, "wins");
-        String winRate = value(data, "win_rate");
-        String kills = value(data, "kills");
-        String deaths = value(data, "deaths");
-        String assists = value(data, "assists");
-        String kd = value(data, "kd");
-        String accuracy = value(data, "accuracy");
-
-        TextView name = makeText(
-                nickname.equals("—") ? "Игрок Standoff 2" : nickname,
-                25,
-                true
-        );
-        name.setTextColor(Color.WHITE);
-        cardView.addView(name, matchWrap());
-
-        addStat(cardView, "🆔 ID", id);
-        addStat(cardView, "⭐ Уровень", level);
-        addStat(cardView, "🏆 Рейтинг", rating);
-        addStat(cardView, "🎮 Матчи", matches);
-        addStat(cardView, "🥇 Победы", wins);
-        addStat(cardView, "📈 Winrate", percent(winRate));
-        addStat(cardView, "☠️ Убийства", kills);
-        addStat(cardView, "💀 Смерти", deaths);
-        addStat(cardView, "🤝 Ассисты", assists);
-        addStat(cardView, "⚔️ K/D", kd);
-        addStat(cardView, "🎯 Точность", percent(accuracy));
-
-        TextView source = makeText(
-                "Ghostly API • Standoff 2 RPC",
-                13,
-                false
-        );
-        source.setTextColor(Color.rgb(150, 135, 170));
-        LinearLayout.LayoutParams sourceParams = matchWrap();
-        sourceParams.topMargin = 18;
-        cardView.addView(source, sourceParams);
-    }
-
-    private void addStat(LinearLayout root, String label, String value) {
-        TextView row = new TextView(this);
-        row.setText(label + ": " + value);
-        row.setTextSize(17);
-        row.setTextColor(soft);
-        row.setPadding(0, 9, 0, 9);
-        root.addView(row, matchWrap());
-    }
-
-    private String value(JSONObject object, String key) {
-        if (object.isNull(key)) {
-            return "—";
-        }
-        String value = object.optString(key, "—");
-        return value == null || value.isEmpty() || value.equals("null") ? "—" : value;
-    }
-
-    private String percent(String value) {
-        if (value.equals("—")) {
-            return value;
-        }
-        return value.endsWith("%") ? value : value + "%";
-    }
-
-    private HttpURLConnection open(URL url) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout(8000);
-        connection.setReadTimeout(12000);
-        connection.setUseCaches(false);
-        return connection;
-    }
-
-    private JSONObject readJson(HttpURLConnection connection) throws Exception {
-        StringBuilder body = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(connection.getInputStream())
-        )) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                body.append(line);
-            }
-        }
-        return new JSONObject(body.toString());
-    }
-
-    private LinearLayout baseColumn() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(34, 48, 34, 48);
-        root.setBackgroundColor(bg);
-        return root;
-    }
-
-    private TextView makeText(String value, float size, boolean bold) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(size);
-        view.setGravity(Gravity.CENTER);
-        view.setTypeface(null, bold ? Typeface.BOLD : Typeface.NORMAL);
-        return view;
-    }
-
-    private GradientDrawable roundBg(int color, int radiusDp) {
-        float density = getResources().getDisplayMetrics().density;
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(color);
-        drawable.setCornerRadius(radiusDp * density);
-        drawable.setStroke(Math.max(1, (int) density), Color.rgb(55, 38, 76));
-        return drawable;
-    }
-
-    private LinearLayout.LayoutParams matchWrap() {
-        return new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-    }
+  public void onCreate(Bundle b){super.onCreate(b); getWindow().setFlags(1024,1024); hide(); p=getSharedPreferences("ghostly",0);
+    if(p.getBoolean("logged",false)) menu(); else if(p.contains("nick")) login(); else welcome();
+  }
+  void hide(){getWindow().getDecorView().setSystemUiVisibility(5894);}
+  TextView t(String s,int z,boolean bold){TextView v=new TextView(this);v.setText(s);v.setTextSize(z);v.setTextColor(Color.WHITE);v.setGravity(17);v.setTypeface(null,bold?1:0);return v;}
+  LinearLayout root(){LinearLayout r=new LinearLayout(this);r.setOrientation(LinearLayout.VERTICAL);r.setGravity(17);r.setPadding(28,40,28,40);r.setBackgroundColor(BG);return r;}
+  LinearLayout.LayoutParams mw(){return new LinearLayout.LayoutParams(-1,-2);}
+  void logo(LinearLayout r){TextView x=t("👻 GHOSTLY",31,true);x.setTextColor(PURPLE);r.addView(x,mw());}
+  GradientDrawable bg(int c,int rad){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(rad*getResources().getDisplayMetrics().density);d.setStroke(1,Color.rgb(65,45,86));return d;}
+  EditText f(String h){EditText e=new EditText(this);e.setHint(h);e.setHintTextColor(Color.rgb(145,134,160));e.setTextColor(Color.WHITE);e.setTextSize(17);e.setSingleLine();e.setPadding(20,15,20,15);e.setBackground(bg(CARD,18));return e;}
+  Button b(String s){Button x=new Button(this);x.setText(s);x.setTextSize(16);x.setTextColor(Color.WHITE);x.setAllCaps(false);x.setBackground(bg(Color.rgb(34,22,49),18));return x;}
+  void gap(LinearLayout r,int top){View v=new View(this);LinearLayout.LayoutParams q=new LinearLayout.LayoutParams(1,top);r.addView(v,q);}
+  void welcome(){LinearLayout r=root();logo(r);gap(r,20);r.addView(t("Добро пожаловать в Ghostly",26,true),mw());r.addView(t("Приложение для игроков Standoff 2",16,false),mw());Button reg=b("📝 Регистрация"),log=b("🔐 Войти");r.addView(reg,mw());LinearLayout.LayoutParams q=mw();q.topMargin=12;r.addView(log,q);reg.setOnClickListener(v->register());log.setOnClickListener(v->login());setContentView(r);}
+  void register(){ScrollView sc=new ScrollView(this);sc.setBackgroundColor(BG);LinearLayout r=root();logo(r);r.addView(t("Регистрация",27,true),mw());
+    EditText n=f("Никнейм"),id=f("ID Standoff 2"),pw=f("Пароль"),rp=f("Повторить пароль");id.setInputType(2);pw.setInputType(129);rp.setInputType(129);
+    r.addView(n,mw());lp(r,id,12);lp(r,pw,12);lp(r,rp,12);TextView err=t("",14,false);err.setTextColor(Color.rgb(255,140,140));lp(r,err,12);
+    Button ok=b("✅ Создать аккаунт"),back=b("← Назад");lp(r,ok,8);lp(r,back,8);
+    ok.setOnClickListener(v->{String a=n.getText().toString().trim(),i=id.getText().toString().trim(),x=pw.getText().toString(),y=rp.getText().toString();
+      if(a.length()<3||a.length()>20){err.setText("Никнейм: 3–20 символов");return;} if(!i.matches("\\d{3,20}")){err.setText("ID: только цифры, 3–20");return;}
+      if(x.length()<6){err.setText("Пароль: минимум 6 символов");return;} if(!x.equals(y)){err.setText("Пароли не совпадают");return;}
+      p.edit().putString("nick",a).putString("id",i).putString("pass",sha(x)).putBoolean("logged",true).apply();menu();
+    });back.setOnClickListener(v->welcome());sc.addView(r);setContentView(sc);}
+  void login(){LinearLayout r=root();logo(r);r.addView(t("Вход",27,true),mw());EditText n=f("Имя / никнейм"),pw=f("Пароль");pw.setInputType(129);r.addView(n,mw());lp(r,pw,12);TextView err=t("",14,false);err.setTextColor(Color.rgb(255,140,140));lp(r,err,12);
+    Button ok=b("🔐 Войти"),reg=b("📝 Регистрация");lp(r,ok,8);lp(r,reg,8);
+    ok.setOnClickListener(v->{if(p.getString("nick","").equalsIgnoreCase(n.getText().toString().trim())&&p.getString("pass","").equals(sha(pw.getText().toString()))){p.edit().putBoolean("logged",true).apply();menu();}else err.setText("Неверный никнейм или пароль");});reg.setOnClickListener(v->register());setContentView(r);}
+  void menu(){LinearLayout r=root();logo(r);LinearLayout.LayoutParams q=mw();q.topMargin=16;TextView h=t("👋 Привет, "+p.getString("nick","Игрок")+"!",23,true);r.addView(h,q);r.addView(t("Главное меню",16,false),mw());
+    Button s=b("📊 Статистика Standoff 2"),pr=b("👤 Мой профиль"),api=b("⚙️ Настройки API"),out=b("🚪 Выйти");lp(r,s,22);lp(r,pr,12);lp(r,api,12);lp(r,out,24);
+    s.setOnClickListener(v->stats());pr.setOnClickListener(v->profile());api.setOnClickListener(v->apiSettings());out.setOnClickListener(v->{p.edit().putBoolean("logged",false).apply();login();});setContentView(r);}
+  void profile(){LinearLayout r=root();logo(r);r.addView(t("👤 Профиль",26,true),mw());card(r,"Никнейм",p.getString("nick","—"));card(r,"ID Standoff 2",p.getString("id","—"));Button back=b("← Назад");lp(r,back,18);back.setOnClickListener(v->menu());setContentView(r);}
+  void apiSettings(){LinearLayout r=root();logo(r);r.addView(t("⚙️ Настройки API",26,true),mw());r.addView(t("Укажи адрес своего Ghostly API",15,false),mw());EditText e=f("http://192.168.1.100:8081");e.setText(p.getString("url",""));lp(r,e,14);Button save=b("💾 Сохранить"),test=b("🔎 Проверить"),back=b("← Назад");lp(r,save,10);lp(r,test,10);TextView st=t("",14,false);st.setTextColor(SOFT);lp(r,st,12);lp(r,back,18);
+    save.setOnClickListener(v->{p.edit().putString("url",clean(e.getText().toString())).apply();st.setText("✅ Сохранено");});
+    test.setOnClickListener(v->new Thread(()->{try{JSONObject j=get(clean(e.getText().toString())+"/api/health");runOnUiThread(()->st.setText(j.optBoolean("ok",false)?"✅ API доступен":"⚠️ API ответил с ошибкой"));}catch(Exception ex){runOnUiThread(()->st.setText("❌ API недоступен"));}}).start());
+    back.setOnClickListener(v->menu());setContentView(r);}
+  void stats(){LinearLayout r=root();logo(r);r.addView(t("📊 Standoff 2",27,true),mw());EditText id=f("ID игрока");id.setInputType(2);id.setText(p.getString("id",""));lp(r,id,16);Button go=b("🔎 Получить статистику"),back=b("← Назад");lp(r,go,10);TextView st=t("",14,false);st.setTextColor(SOFT);lp(r,st,12);LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(18,18,18,18);card.setBackground(bg(CARD,18));card.setVisibility(View.GONE);lp(r,card,12);lp(r,back,18);
+    go.setOnClickListener(v->{String x=id.getText().toString().trim(),u=clean(p.getString("url",""));if(!x.matches("\\d{3,20}")){st.setText("❌ ID только из цифр");return;}if(u.isEmpty()){st.setText("⚠️ Сначала укажи URL API в настройках");return;}go.setEnabled(false);st.setText("🟣 Получаем данные...");new Thread(()->{try{JSONObject j=get(u+"/api/player/"+x);if(!j.optBoolean("ok",false))throw new Exception(j.optString("error","API error"));JSONObject d=j.getJSONObject("data");runOnUiThread(()->{card.removeAllViews();add(card,"👤 "+val(d,"nickname"));add(card,"🆔 ID: "+val(d,"id"));add(card,"⭐ Уровень: "+val(d,"level"));add(card,"🏆 Рейтинг: "+val(d,"rating"));add(card,"🎮 Матчи: "+val(d,"matches"));add(card,"🥇 Победы: "+val(d,"wins"));add(card,"📈 Winrate: "+val(d,"win_rate"));add(card,"⚔️ K/D: "+val(d,"kd"));add(card,"🎯 Точность: "+val(d,"accuracy"));card.setVisibility(View.VISIBLE);st.setText("✅ Данные получены");go.setEnabled(true);});}catch(Exception ex){runOnUiThread(()->{st.setText("❌ "+ex.getMessage());go.setEnabled(true);});}}).start();});
+    back.setOnClickListener(v->menu());setContentView(r);}
+  void add(LinearLayout r,String s){TextView x=t(s,16,false);x.setGravity(3);x.setTextColor(SOFT);x.setPadding(0,7,0,7);r.addView(x,mw());}
+  void card(LinearLayout r,String n,String v){LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(18,16,18,16);c.setBackground(bg(CARD,18));lp(r,c,12);add(c,n);add(c,v);}
+  void lp(LinearLayout r,View v,int top){LinearLayout.LayoutParams q=mw();q.topMargin=top;r.addView(v,q);}
+  String clean(String s){if(s==null)return "";s=s.trim();while(s.endsWith("/"))s=s.substring(0,s.length()-1);return s;}
+  JSONObject get(String u)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(u).openConnection();c.setRequestMethod("GET");c.setConnectTimeout(7000);c.setReadTimeout(12000);int code=c.getResponseCode();BufferedReader br=new BufferedReader(new InputStreamReader(code<400?c.getInputStream():c.getErrorStream()));StringBuilder z=new StringBuilder();String l;while((l=br.readLine())!=null)z.append(l);br.close();if(code<200||code>=300)throw new Exception("HTTP "+code);return new JSONObject(z.toString());}
+  String val(JSONObject j,String k){String s=j.optString(k,"—");return s.equals("null")||s.isEmpty()?"—":s;}
+  String sha(String s){try{byte[] b=MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));StringBuilder x=new StringBuilder();for(byte q:b)x.append(String.format("%02x",q));return x.toString();}catch(Exception e){return "";}}
 }
