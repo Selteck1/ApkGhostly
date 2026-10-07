@@ -160,15 +160,9 @@ public class MainActivity extends Activity {
 
                 handler.post(() -> {
                     status.setText(
-                            "✅ Сервер подключён
-
-" +
-                            "✅ Соединение установлено
-
-" +
-                            "✅ Система готова к работе
-
-" +
+                            "✅ Сервер подключён\\n\\n" +
+                            "✅ Соединение установлено\\n\\n" +
+                            "✅ Система готова к работе\\n\\n" +
                             "🟣 Ghostly API • v" + version
                     );
                     status.setTextColor(Color.rgb(180, 255, 195));
@@ -176,12 +170,8 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 handler.post(() -> {
                     status.setText(
-                            "❌ Сервер недоступен
-
-" +
-                            "Запусти Ghostly API на устройстве и повтори проверку.
-
-" +
+                            "❌ Сервер недоступен\\n\\n" +
+                            "Запусти Ghostly API на устройстве и повтори проверку.\\n\\n" +
                             "Адрес: " + getString(R.string.server_url)
                     );
                     status.setTextColor(Color.rgb(255, 145, 145));
