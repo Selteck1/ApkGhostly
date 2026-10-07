@@ -24,6 +24,15 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Restore embedded intro video
+        run: |
+          base64 --decode app/src/main/res/raw/ghostly_intro.mp4.b64 > app/src/main/res/raw/ghostly_intro.mp4
+
+      - name: Validate intro video
+        run: |
+          test -s app/src/main/res/raw/ghostly_intro.mp4
+          file app/src/main/res/raw/ghostly_intro.mp4
+
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
