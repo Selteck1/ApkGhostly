@@ -34,7 +34,7 @@ public final class ShizukuPerformanceManager {
             Callback callback = pendingCallback;
             pendingCallback = null;
             if (result == PackageManager.PERMISSION_GRANTED) {
-                bindAndSet(true, callback);
+                bindAndSet(true, fps, callback);
             } else if (callback != null) {
                 callback.onFailure("Shizuku не дал разрешение.");
             }
@@ -59,7 +59,7 @@ public final class ShizukuPerformanceManager {
         }
     }
 
-    public void enable(Callback callback) {
+    public void enable(int fps, Callback callback) {
         if (!isAvailable()) {
             callback.onFailure(
                 "Shizuku не запущен. Установи Shizuku и запусти его через «Беспроводную отладку»."
@@ -78,12 +78,12 @@ public final class ShizukuPerformanceManager {
             return;
         }
 
-        bindAndSet(true, callback);
+        bindAndSet(true, fps, callback);
     }
 
     public void disable(Callback callback) {
         if (remote != null) {
-            execute(false, callback);
+            execute(false, 60, callback);
             return;
         }
 
@@ -92,12 +92,12 @@ public final class ShizukuPerformanceManager {
             return;
         }
 
-        bindAndSet(false, callback);
+        bindAndSet(false, 60, callback);
     }
 
-    private void bindAndSet(boolean enabled, Callback callback) {
+    private void bindAndSet(boolean enabled, int fps, Callback callback) {
         if (remote != null) {
-            execute(enabled, callback);
+            execute(enabled, fps, callback);
             return;
         }
 
@@ -129,10 +129,10 @@ public final class ShizukuPerformanceManager {
         }
     }
 
-    private void execute(boolean enabled, Callback callback) {
+    private void execute(boolean enabled, int fps, Callback callback) {
         new Thread(() -> {
             try {
-                String result = remote.setFixedPerformance(enabled);
+                String result = remote.setPerformance(enabled, fps);
                 if (callback != null) {
                     activity.runOnUiThread(() ->
                         callback.onSuccess(result)
@@ -160,7 +160,7 @@ public final class ShizukuPerformanceManager {
 
         new Thread(() -> {
             try {
-                remote.setFixedPerformance(false);
+                remote.setPerformance(false, 60);
             } catch (Throwable ignored) {
             } finally {
                 cleanupRemoteService();
