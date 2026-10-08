@@ -449,6 +449,14 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
+    private LinearLayout.LayoutParams weightLp(float weight, int l, int t, int r) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, weight
+        );
+        p.setMargins(dp(l), dp(t), dp(r), 0);
+        return p;
+    }
+
     private int dp(int value) { return Math.round(value*getResources().getDisplayMetrics().density); }
 
     private static final class Config {
