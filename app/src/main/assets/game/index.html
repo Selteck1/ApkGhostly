@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Ghostly Arena</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050608;color:#fff;font-family:Arial,sans-serif;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;inset:0;pointer-events:none}
+.top{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:8px;font-weight:700;text-shadow:0 2px 5px #000}
+.box{background:rgba(7,8,12,.62);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px 12px;backdrop-filter:blur(5px)}
+#center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:22px;text-shadow:0 2px 4px #000}
+#cross{font-size:28px}
+#bottom{position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:flex-end;justify-content:space-between}
+#stats{pointer-events:none}
+#weapon{min-width:155px}
+#controls{position:absolute;inset:0}
+.pad{position:absolute;border-radius:50%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12)}
+#joy{left:24px;bottom:32px;width:125px;height:125px}
+#knob{position:absolute;width:54px;height:54px;border-radius:50%;left:35px;top:35px;background:rgba(220,180,255,.35);border:1px solid rgba(255,255,255,.22)}
+#look{right:0;top:18%;width:58%;height:65%}
+#fire{right:28px;bottom:50px;width:92px;height:92px;background:rgba(255,80,110,.22);display:grid;place-items:center;font-weight:900;font-size:17px}
+#reload{right:140px;bottom:50px;width:72px;height:72px;background:rgba(255,255,255,.08);display:grid;place-items:center;font-weight:700}
+#switch{right:226px;bottom:50px;width:72px;height:72px;background:rgba(255,255,255,.08);display:grid;place-items:center;font-weight:700}
+#buy{right:20px;top:74px;padding:10px 14px;background:rgba(130,70,255,.2);border:1px solid rgba(200,150,255,.35);border-radius:12px;font-weight:800}
+#banner{position:absolute;left:50%;top:16%;transform:translateX(-50%);text-align:center;max-width:92%;font-size:25px;font-weight:900;text-shadow:0 3px 10px #000}
+#help{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);font-size:12px;color:#c7c7d1;text-shadow:0 2px 4px #000}
+button{font:inherit;color:#fff}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="hud">
+  <div class="top">
+    <div class="box">Ghostly Arena · Раунд <span id="round">1</span>/9</div>
+    <div class="box">🔵 <span id="aScore">0</span> : <span id="bScore">0</span> 🔴</div>
+  </div>
+  <div id="center"><span id="cross">+</span></div>
+  <div id="banner"></div>
+  <div id="buy" class="box">💰 <span id="money">800</span> · BUY</div>
+  <div id="bottom">
+    <div id="stats" class="box">
+      ❤️ <span id="hp">100</span> · 🛡 <span id="armor">100</span><br>
+      ☠️ <span id="kills">0</span> · 🎯 <span id="shots">0</span>/<span id="hits">0</span>
+    </div>
+    <div id="weapon" class="box">
+      <b id="weaponName">Pistol</b><br>
+      🔫 <span id="ammo">12</span>/<span id="reserve">48</span>
+    </div>
+  </div>
+  <div id="controls">
+    <div id="joy" class="pad"><div id="knob"></div></div>
+    <div id="look"></div>
+    <div id="fire" class="pad">FIRE</div>
+    <div id="reload" class="pad">↻<br>Reload</div>
+    <div id="switch" class="pad">⇄<br>Gun</div>
+  </div>
+  <div id="help">Двигайся слева · осматривайся справа · стреляй FIRE · раунды до 5 побед</div>
+</div>
+<script>
+const canvas=document.getElementById('gl'), gl=canvas.getContext('webgl',{antialias:false});
+if(!gl){document.body.innerHTML='<h2 style="padding:30px">WebGL недоступен на этом устройстве.</h2>';throw new Error('WebGL')}
+
+const VS='attribute vec3 p;uniform mat4 m;uniform mat4 v;uniform mat4 pr;uniform vec3 c;varying vec3 vc;void main(){gl_Position=pr*v*m*vec4(p,1.0);vc=c;}';
+const FS='precision mediump float;varying vec3 vc;void main(){gl_FragColor=vec4(vc,1.0);}';
+function sh(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(x);return x}
+const prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);
+gl.useProgram(prog);
+const locP=gl.getAttribLocation(prog,'p'),locM=gl.getUniformLocation(prog,'m'),locV=gl.getUniformLocation(prog,'v'),locPR=gl.getUniformLocation(prog,'pr'),locC=gl.getUniformLocation(prog,'c');
+const cube=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,cube);
+const verts=[
+-1,-1,-1,1,-1,-1,1,1,-1,-1,1,-1, -1,-1,1,1,-1,1,1,1,1,-1,1,1,
+-1,-1,-1,-1,1,-1,-1,1,1,-1,-1,1, 1,-1,-1,1,1,-1,1,1,1,1,-1,1,
+-1,-1,-1,-1,-1,1,1,-1,1,1,-1,-1, -1,1,-1,-1,1,1,1,1,1,1,1,-1
+];
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(locP);gl.vertexAttribPointer(locP,3,gl.FLOAT,false,0,0);
+gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);
+
+function I(){return[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]}
+function mul(a,b){let r=new Array(16).fill(0);for(let i=0;i<4;i++)for(let j=0;j<4;j++)for(let k=0;k<4;k++)r[i*4+j]+=a[i*4+k]*b[k*4+j];return r}
+function tr(x,y,z,sx,sy,sz){let m=I();m[0]=sx;m[5]=sy;m[10]=sz;m[12]=x;m[13]=y;m[14]=z;return m}
+function persp(fovy,asp,n,f){let t=1/Math.tan(fovy/2),m=new Array(16).fill(0);m[0]=t/asp;m[5]=t;m[10]=(f+n)/(n-f);m[11]=-1;m[14]=(2*f*n)/(n-f);return m}
+function camMatrix(pos,yaw,pitch){const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);return[
+cy,sy*sp,-sy*cp,0, 0,cp,sp,0, sy,-cy*sp,cy*cp,0,
+-pos[0]*cy-pos[2]*sy, -pos[1]*cp+pos[2]*0-pos[0]*sy*sp+pos[2]*cy*sp, pos[0]*cp*sy-pos[2]*cp*cy-pos[1]*sp,1]}
+function cubeDraw(x,y,z,sx,sy,sz,col){gl.uniformMatrix4fv(locM,false,new Float32Array(tr(x,y,z,sx,sy,sz)));gl.uniform3fv(locC,new Float32Array(col));gl.drawArrays(gl.TRIANGLE_FAN,0,24)}
+
+const walls=[];
+const props=[];
+function wall(x,z,w,d,h=2.4,c=[.29,.30,.34]){walls.push({x,z,w,d});props.push({x,y:h/2,z,sx:w/2,sy:h/2,sz:d/2,c})}
+function box(x,z,w,d,h,c){props.push({x,y:h/2,z,sx:w/2,sy:h/2,sz:d/2,c})}
+function buildMap(){
+  walls.length=0;props.length=0;
+  box(0,-2,28,28,.15,[.08,.08,.10]);
+  // Competitive urban layout: central lane + A/B compounds.
+  wall(-11,0,1,24,3,[.23,.24,.28]); wall(11,0,1,24,3,[.23,.24,.28]);
+  wall(0,-11,22,1,3,[.23,.24,.28]); wall(0,11,22,1,3,[.23,.24,.28]);
+  wall(-5,0,1,12,3,[.33,.27,.22]); wall(5,0,1,12,3,[.33,.27,.22]);
+  wall(0,-6,10,1,2.6,[.35,.30,.25]); wall(0,6,10,1,2.6,[.35,.30,.25]);
+  wall(-7,4,4,1,2.4,[.22,.28,.25]); wall(7,-4,4,1,2.4,[.22,.28,.25]);
+  box(-8,-7,3,2,1.2,[.18,.22,.25]); box(8,7,3,2,1.2,[.18,.22,.25]);
+  box(-8,7,2,2,1.2,[.38,.28,.18]); box(8,-7,2,2,1.2,[.38,.28,.18]);
+  box(-2,9,4,1,1.5,[.21,.22,.25]); box(2,-9,4,1,1.5,[.21,.22,.25]);
+  // site platforms
+  box(-7,-8,6,5,.06,[.10,.14,.12]); box(7,8,6,5,.06,[.14,.11,.10]);
+}
+buildMap();
+
+const weapons=[
+ {name:'Pistol',mag:12,ammo:12,reserve:48,damage:32,rate:380,spread:.035,cost:0},
+ {name:'SMG',mag:30,ammo:30,reserve:90,damage:22,rate:105,spread:.055,cost:1100},
+ {name:'Rifle',mag:30,ammo:30,reserve:90,damage:42,rate:145,spread:.025,cost:1700}
+];
+let weaponIndex=0;
+
+const player={x:-7,z:-8,y:1.55,yaw:0,pitch:0,hp:100,armor:100,speed:4.0};
+let allies=[],enemies=[],money=800,round=1,aScore=0,bScore=0,kills=0,shots=0,hits=0;
+let phase='buy',phaseUntil=performance.now()+7000,lastShot=0,fire=false;
+const keys={};let joy={x:0,y:0},look={active:false,x:0,y:0};
+function spawnTeam(){
+  allies=[0,1,2,3].map(i=>({x:-7+(i%2)*2,z:-5+Math.floor(i/2)*2,hp:100,alive:true,yaw:0,cool:Math.random()*800}));
+  enemies=[0,1,2,3,4].map(i=>({x:7-(i%2)*2,z:5+Math.floor(i/2)*2,hp:100,alive:true,cool:Math.random()*900}));
+}
+spawnTeam();
+
+function resetPlayer(){player.x=-7;player.z=-8;player.yaw=0;player.pitch=0;player.hp=100;player.armor=100;weaponIndex=0;weapons[0].ammo=12;weapons[0].reserve=48}
+function startRound(){
+  phase='buy';phaseUntil=performance.now()+6500;resetPlayer();spawnTeam();banner('BUY PHASE · '+(round>1?'Раунд '+round:'Начало')); 
+}
+function endRound(won){
+  phase='result';phaseUntil=performance.now()+3300;
+  if(won){aScore++;money+=3250;banner('РАУНД ЗА НАМИ');}
+  else{bScore++;money+=1400;banner('РАУНД ПРОИГРАН');}
+  round++;
+  if(aScore>=5||bScore>=5){banner(aScore>=5?'ПОБЕДА В МАТЧЕ':'ПОРАЖЕНИЕ В МАТЧЕ');setTimeout(()=>{aScore=0;bScore=0;round=1;money=800;startRound()},4000)}
+}
+function banner(t){document.getElementById('banner').textContent=t;setTimeout(()=>{if(document.getElementById('banner').textContent===t)document.getElementById('banner').textContent=''},1800)}
+
+function blocked(x,z){
+  for(const w of walls){
+    const cx=Math.max(w.x-w.w/2,Math.min(x,w.x+w.w/2)),cz=Math.max(w.z-w.d/2,Math.min(z,w.z+w.d/2));
+    if((x-cx)*(x-cx)+(z-cz)*(z-cz)<.33) return true;
+  }
+  return x<-10.3||x>10.3||z<-10.3||z>10.3;
+}
+function moveObj(o,dx,dz,speed){
+  const nx=o.x+dx*speed,nz=o.z+dz*speed;
+  if(!blocked(nx,o.z))o.x=nx;
+  if(!blocked(o.x,nz))o.z=nz;
+}
+function forward(){return[Math.sin(player.yaw)*Math.cos(player.pitch),-Math.sin(player.pitch),-Math.cos(player.yaw)*Math.cos(player.pitch)]}
+function shoot(){
+  if(phase==='result')return;
+  const w=weapons[weaponIndex],now=performance.now();
+  if(now-lastShot<w.rate)return;
+  if(w.ammo<=0){reload();return}
+  lastShot=now;w.ammo--;shots++;
+  const f=forward();let target=null,best=.055+0.015*weaponIndex;
+  for(const e of enemies){if(!e.alive)continue;const dx=e.x-player.x,dy=0.15,dz=e.z-player.z,dist=Math.hypot(dx,dy,dz);if(dist>32)continue;const dot=(dx*f[0]+dy*f[1]+dz*f[2])/dist;if(dot>best){best=dot;target=e}}
+  if(target){target.hp-=w.damage*(1-Math.random()*.12);hits++;if(target.hp<=0){target.alive=false;kills++;money+=300;}}
+}
+function reload(){
+  const w=weapons[weaponIndex],need=w.mag-w.ammo;
+  if(need<=0||w.reserve<=0)return;
+  const take=Math.min(need,w.reserve);w.ammo+=take;w.reserve-=take;
+}
+function switchWeapon(){weaponIndex=(weaponIndex+1)%weapons.length}
+function buy(){
+  if(phase!=='buy')return;
+  if(money>=1100&&weaponIndex===0&&confirm('Купить SMG за $1100?')){money-=1100;weaponIndex=1}
+  else if(money>=1700&&weaponIndex!==2&&confirm('Купить Rifle за $1700?')){money-=1700;weaponIndex=2}
+}
+
+function botThink(dt){
+  const now=performance.now();
+  const liveEnemies=enemies.filter(e=>e.alive);
+  const liveAllies=allies.filter(e=>e.alive);
+  for(const e of enemies.filter(e=>e.alive)){
+    const dx=player.x-e.x,dz=player.z-e.z,dist=Math.hypot(dx,dz);
+    if(dist>5)moveObj(e,dx/(dist||1),dz/(dist||1),dt*(dist>10?1.25:.45));
+    else if(now-e.cool>900){e.cool=now;if(Math.random()<.72)player.hp=Math.max(0,player.hp-12)}
+  }
+  for(const a of allies.filter(a=>a.alive)){
+    let tgt=liveEnemies.sort((u,v)=>Math.hypot(u.x-a.x,u.z-a.z)-Math.hypot(v.x-a.x,v.z-a.z))[0];
+    if(tgt){
+      const dx=tgt.x-a.x,dz=tgt.z-a.z,dist=Math.hypot(dx,dz);
+      if(dist>7)moveObj(a,dx/(dist||1),dz/(dist||1),dt*.7);
+      else if(now-a.cool>1100){a.cool=now;if(Math.random()<.56)tgt.hp-=27;if(tgt.hp<=0)tgt.alive=false}
+    }
+  }
+  // Last alive side decides round.
+  if(liveEnemies.length===0)endRound(true);
+  else if(liveAllies.length===0 && !allies.some(a=>a.alive)) endRound(false);
+}
+
+function draw(){
+  const dpr=Math.min(devicePixelRatio||1,1.5),w=innerWidth*dpr,h=innerHeight*dpr;
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}
+  gl.clearColor(.035,.04,.06,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const pr=persp(Math.PI/3,w/h,.1,70);gl.uniformMatrix4fv(locPR,false,new Float32Array(pr));
+  const v=camMatrix([player.x,player.y,player.z],player.yaw,player.pitch);gl.uniformMatrix4fv(locV,false,new Float32Array(v));
+  for(const p of props)cubeDraw(p.x,p.y,p.z,p.sx,p.sy,p.sz,p.c);
+  for(const a of allies)if(a.alive){cubeDraw(a.x,1,a.z,.35,1,.35,[.12,.42,.9]);cubeDraw(a.x,2.15,a.z,.25,.25,.25,[.75,.8,1])}
+  for(const e of enemies)if(e.alive){cubeDraw(e.x,1,e.z,.35,1,.35,[.75,.12,.16]);cubeDraw(e.x,2.15,e.z,.25,.25,.25,[1,.72,.72])}
+  // first-person weapon
+  cubeDraw(player.x+Math.sin(player.yaw)*.55+.45,player.y-.35,player.z-Math.cos(player.yaw)*.65,.42,.15,.75,[.15,.13,.18]);
+}
+
+function updateUI(){
+  const w=weapons[weaponIndex];
+  document.getElementById('round').textContent=Math.min(round,9);
+  document.getElementById('aScore').textContent=aScore;document.getElementById('bScore').textContent=bScore;
+  document.getElementById('money').textContent=money;
+  document.getElementById('hp').textContent=player.hp;document.getElementById('armor').textContent=player.armor;
+  document.getElementById('kills').textContent=kills;document.getElementById('shots').textContent=shots;document.getElementById('hits').textContent=hits;
+  document.getElementById('weaponName').textContent=w.name;document.getElementById('ammo').textContent=w.ammo;document.getElementById('reserve').textContent=w.reserve;
+}
+function update(dt){
+  const now=performance.now();
+  if(phase==='buy' && now>phaseUntil){phase='live';banner('ROUND START')}
+  if(phase==='result' && now>phaseUntil){startRound()}
+  if(phase==='live' || phase==='buy'){
+    let sx=joy.x,sz=joy.y;
+    const fwd=-sz,side=sx;const cy=Math.cos(player.yaw),sy=Math.sin(player.yaw);
+    moveObj(player,(sy*fwd+cy*side),(-cy*fwd+sy*side),dt*player.speed);
+    botThink(dt);
+    if(fire)shoot();
+    if(player.hp<=0)endRound(false);
+  }
+  updateUI();
+}
+let last=performance.now();
+function loop(t){const dt=Math.min(.033,(t-last)/1000);last=t;update(dt);draw();requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+
+// Input
+const joyEl=document.getElementById('joy'),knob=document.getElementById('knob'),lookEl=document.getElementById('look'),fireEl=document.getElementById('fire');
+let joyPid=null,lookPid=null,lx=0,ly=0;
+joyEl.addEventListener('touchstart',e=>{e.preventDefault();const q=e.changedTouches[0];joyPid=q.identifier});
+joyEl.addEventListener('touchmove',e=>{e.preventDefault();for(const q of e.changedTouches)if(q.identifier===joyPid){const r=joyEl.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=q.clientX-cx,dy=q.clientY-cy,len=Math.min(48,Math.hypot(dx,dy)),k=len/(Math.hypot(dx,dy)||1);joy.x=dx*k/48;joy.y=dy*k/48;knob.style.transform='translate('+joy.x*48+'px,'+joy.y*48+'px)'}});
+joyEl.addEventListener('touchend',e=>{joy.x=joy.y=0;knob.style.transform='translate(0,0)'});
+lookEl.addEventListener('touchstart',e=>{e.preventDefault();const q=e.changedTouches[0];lookPid=q.identifier;lx=q.clientX;ly=q.clientY});
+lookEl.addEventListener('touchmove',e=>{e.preventDefault();for(const q of e.changedTouches)if(q.identifier===lookPid){player.yaw+=(q.clientX-lx)*.006;player.pitch=Math.max(-1.1,Math.min(1.1,player.pitch+(q.clientY-ly)*.004));lx=q.clientX;ly=q.clientY}});
+lookEl.addEventListener('touchend',e=>{lookPid=null});
+fireEl.addEventListener('touchstart',e=>{e.preventDefault();fire=true});fireEl.addEventListener('touchend',e=>{e.preventDefault();fire=false});
+document.getElementById('reload').addEventListener('touchstart',e=>{e.preventDefault();reload()});
+document.getElementById('switch').addEventListener('touchstart',e=>{e.preventDefault();switchWeapon()});
+document.getElementById('buy').addEventListener('touchstart',e=>{e.preventDefault();buy()});
+document.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(e.key==='r')reload();if(e.key==='1')weaponIndex=0;if(e.key==='2')weaponIndex=1;if(e.key==='3')weaponIndex=2;if(e.key===' ')fire=true});
+document.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;if(e.key===' ')fire=false});
+setInterval(()=>{if(keys.w)joy.y=-1;if(keys.s)joy.y=1;if(keys.a)joy.x=-1;if(keys.d)joy.x=1},50);
+</script>
+</body>
+</html>
