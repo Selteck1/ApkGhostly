@@ -457,8 +457,25 @@ public class VoiceChatService extends Service {
     }
 
     @Override public void onDestroy() {
-        stopVoice();
+        running.set(false);
+        hideOverlay();
+        try { if (socket != null) socket.cancel(); } catch (Exception ignored) {}
+        socket = null;
+        try { if (recorder != null) recorder.stop(); } catch (Exception ignored) {}
+        try { if (recorder != null) recorder.release(); } catch (Exception ignored) {}
+        recorder = null;
+        try { if (player != null) player.stop(); } catch (Exception ignored) {}
+        try { if (player != null) player.release(); } catch (Exception ignored) {}
+        player = null;
+        try { if (aec != null) aec.release(); } catch (Exception ignored) {}
+        aec = null;
+        try { if (ns != null) ns.release(); } catch (Exception ignored) {}
+        ns = null;
         if (client != null) client.dispatcher().executorService().shutdown();
+        try {
+            AudioManager am = (AudioManager)getSystemService(AUDIO_SERVICE);
+            am.setMode(AudioManager.MODE_NORMAL);
+        } catch (Exception ignored) {}
         super.onDestroy();
     }
 
