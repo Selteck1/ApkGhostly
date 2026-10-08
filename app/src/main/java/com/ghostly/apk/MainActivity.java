@@ -238,7 +238,7 @@ public class MainActivity extends Activity {
                 "Напрямую: Ghostly не ставит relay и не создает туннель.\n" +
                 "Standoff 2 использует обычное сетевое подключение Android."
             );
-            setText(findMainAction(), "⚡  Запустить прямое подключение");
+            setText(findMainAction(), "⚡  Играть напрямую");
 
             boolean otherVpn = hasActiveVpn();
             metrics.setText(
@@ -284,9 +284,11 @@ public class MainActivity extends Activity {
         );
         status.setText(
             otherVpn
-                ? "⚠️ Прямой режим активен, но другой VPN всё ещё может менять маршрут."
+                ? "⚠️ Прямой режим активен. Другой VPN не принадлежит Ghostly и может менять маршрут."
                 : "✅ Прямой режим активен. Ghostly relay не используется."
         );
+
+        launchPackage(STANDOFF_PACKAGE);
     }
 
     private void stopBoost() {
