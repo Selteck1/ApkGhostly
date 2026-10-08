@@ -357,7 +357,6 @@ public class GhostlyVpnService extends VpnService {
                         parsed.payload.length > 0) {
 
                         out.write(parsed.payload);
-                        out.flush();
                     }
 
                 } catch (java.net.SocketTimeoutException timeout) {
