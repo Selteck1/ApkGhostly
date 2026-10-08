@@ -444,7 +444,7 @@ public class MainActivity extends Activity {
         return new Config(host, port, token);
     }
 
-    private TextView modeCard(String title, String desc, String mode) {
+    private LinearLayout modeCard(String title, String desc, String mode) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(14), dp(14), dp(12), dp(14));
