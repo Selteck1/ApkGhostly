@@ -364,7 +364,9 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             status.setText("Установи Shizuku из официального источника.");
         }
-    }\n\n    private void launchPackage(String pkg) {
+    }
+
+    private void launchPackage(String pkg) {
         try { Intent i=getPackageManager().getLaunchIntentForPackage(pkg); if(i!=null){startActivity(i);return;} openPackageSettings(pkg); }
         catch(Exception e){openPackageSettings(pkg);}
     }
