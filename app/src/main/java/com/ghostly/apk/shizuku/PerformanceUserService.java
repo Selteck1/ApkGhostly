@@ -12,6 +12,11 @@ public class PerformanceUserService extends IPerformanceService.Stub {
     }
 
     @Override
+    public void destroy() {
+        System.exit(0);
+    }
+
+    @Override
     public String setFixedPerformance(boolean enabled) throws RemoteException {
         String value = enabled ? "true" : "false";
         Process process = null;
@@ -39,7 +44,9 @@ public class PerformanceUserService extends IPerformanceService.Stub {
             Thread.currentThread().interrupt();
             throw new RemoteException("Команда была прервана.");
         } catch (Exception e) {
-            throw new RemoteException(e.getMessage() == null ? "Shizuku command failed." : e.getMessage());
+            throw new RemoteException(
+                e.getMessage() == null ? "Shizuku command failed." : e.getMessage()
+            );
         } finally {
             if (process != null) {
                 process.destroy();
