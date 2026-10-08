@@ -18,7 +18,6 @@ public class VoiceControlReceiver extends BroadcastReceiver {
         } else {
             return;
         }
-        if (android.os.Build.VERSION.SDK_INT >= 26) context.startForegroundService(i);
-        else context.startService(i);
+        context.startService(i);
     }
 }
