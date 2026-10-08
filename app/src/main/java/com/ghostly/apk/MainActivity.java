@@ -49,7 +49,7 @@ public class MainActivity extends Activity {
     private LinearLayout relayCard, pcCard, fpsCard;
     private TextView status, metrics;
     private EditText hostInput, portInput, tokenInput;
-    private boolean fpsEnabled = false;
+    private boolean fpsEnabled = false;\n    private ShizukuPerformanceManager shizukuPerformance;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -225,21 +225,58 @@ public class MainActivity extends Activity {
     }
 
     private void toggleFps() {
-        fpsEnabled = !fpsEnabled;
-        if (fpsEnabled) {
+        if (!fpsEnabled) {
+            fpsEnabled = true;
             PerformanceController.enable(this);
-            status.setText("🔥 MAX FPS включен. Ghostly не ограничивает нагрев, но Android всё равно может включить thermal throttling.");
+            status.setText("🔥 Базовый MAX PERFORMANCE включён. Проверяю Shizuku…");
+
+            shizukuPerformance.enable(new ShizukuPerformanceManager.Callback() {
+                @Override
+                public void onSuccess(String details) {
+                    status.setText(
+                        "🔥 MAX PERFORMANCE + SHIZUKU включён. " +
+                        "Android получил команду Fixed Performance."
+                    );
+                    refreshUi();
+                }
+
+                @Override
+                public void onFailure(String message) {
+                    status.setText(
+                        "⚠️ Обычный MAX PERFORMANCE работает. Shizuku: " +
+                        message
+                    );
+                    refreshUi();
+                }
+            });
         } else {
+            fpsEnabled = false;
             PerformanceController.disable(this);
-            status.setText("MAX FPS выключен.");
+            shizukuPerformance.disable(new ShizukuPerformanceManager.Callback() {
+                @Override
+                public void onSuccess(String details) {
+                    status.setText("✅ MAX PERFORMANCE и Shizuku-профиль выключены.");
+                    refreshUi();
+                }
+
+                @Override
+                public void onFailure(String message) {
+                    status.setText("✅ Базовый MAX PERFORMANCE выключен. " + message);
+                    refreshUi();
+                }
+            });
+            refreshUi();
         }
-        refreshUi();
     }
 
     private void stopAll() {
         stopService(new Intent(this,GhostlyVpnService.class).setAction(GhostlyVpnService.ACTION_STOP));
         fpsEnabled = false;
         PerformanceController.disable(this);
+        shizukuPerformance.disable(new ShizukuPerformanceManager.Callback() {
+            @Override public void onSuccess(String details) {}
+            @Override public void onFailure(String message) {}
+        });
         getSharedPreferences(PREFS,MODE_PRIVATE).edit().putBoolean("enabled",false).apply();
         status.setText("⛔ Все функции Ghostly отключены.");
         refreshUi();
@@ -309,7 +346,7 @@ public class MainActivity extends Activity {
     private Button secondaryButton(String text) { Button b=baseButton(text); b.setTextColor(WHITE); b.setBackground(round(CARD_2,14)); return b; }
     private Button baseButton(String text) { Button b=new Button(this); b.setText(text); b.setAllCaps(false); b.setTextSize(14); b.setMinHeight(dp(52)); b.setPadding(dp(12),0,dp(12),0); return b; }
 
-    private void launchPackage(String pkg) {
+    private void openShizuku() {\n        try {\n            Intent i = getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");\n            if (i != null) {\n                startActivity(i);\n                return;\n            }\n            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/"));\n            startActivity(web);\n        } catch (Exception e) {\n            status.setText("Установи Shizuku из официального источника.");\n        }\n    }\n\n    private void launchPackage(String pkg) {
         try { Intent i=getPackageManager().getLaunchIntentForPackage(pkg); if(i!=null){startActivity(i);return;} openPackageSettings(pkg); }
         catch(Exception e){openPackageSettings(pkg);}
     }
@@ -328,7 +365,7 @@ public class MainActivity extends Activity {
 
     private android.graphics.drawable.GradientDrawable round(int color,int radius) { android.graphics.drawable.GradientDrawable d=new android.graphics.drawable.GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
     private LinearLayout.LayoutParams lp(int l,int t,int r,int b) { LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT); p.setMargins(dp(l),dp(t),dp(r),dp(b)); return p; }
-    private int dp(int value) { return Math.round(value*getResources().getDisplayMetrics().density); }
+    @Override protected void onDestroy() {\n        try {\n            if (shizukuPerformance != null) shizukuPerformance.shutdown();\n        } catch (Exception ignored) {}\n        super.onDestroy();\n    }\n\n    private int dp(int value) { return Math.round(value*getResources().getDisplayMetrics().density); }
 
     private static final class Config {
         final String host; final int port; final String token;
