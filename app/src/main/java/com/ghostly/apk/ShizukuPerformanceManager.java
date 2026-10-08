@@ -21,6 +21,7 @@ public final class ShizukuPerformanceManager {
     private IPerformanceService remote;
     private Shizuku.OnRequestPermissionResultListener permissionListener;
     private Callback pendingCallback;
+    private int pendingFps = 60;
 
     public interface Callback {
         void onSuccess(String details);
@@ -34,7 +35,7 @@ public final class ShizukuPerformanceManager {
             Callback callback = pendingCallback;
             pendingCallback = null;
             if (result == PackageManager.PERMISSION_GRANTED) {
-                bindAndSet(true, fps, callback);
+                bindAndSet(true, pendingFps, callback);
             } else if (callback != null) {
                 callback.onFailure("Shizuku не дал разрешение.");
             }
@@ -69,6 +70,7 @@ public final class ShizukuPerformanceManager {
 
         if (!hasPermission()) {
             pendingCallback = callback;
+            pendingFps = fps;
             try {
                 Shizuku.requestPermission(REQUEST_CODE);
             } catch (Throwable e) {
@@ -114,7 +116,7 @@ public final class ShizukuPerformanceManager {
                 @Override
                 public void onServiceConnected(ComponentName name, IBinder binder) {
                     remote = IPerformanceService.Stub.asInterface(binder);
-                    execute(enabled, callback);
+                    execute(enabled, fps, callback);
                 }
 
                 @Override
