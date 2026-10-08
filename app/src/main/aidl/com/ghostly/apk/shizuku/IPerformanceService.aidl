@@ -1,5 +1,6 @@
 package com.ghostly.apk.shizuku;
 
 interface IPerformanceService {
-    String setFixedPerformance(boolean enabled);
+    void destroy() = 16777114;
+    String setFixedPerformance(boolean enabled) = 1;
 }
