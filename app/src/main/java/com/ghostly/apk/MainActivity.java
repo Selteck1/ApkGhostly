@@ -50,6 +50,9 @@ public class MainActivity extends Activity {
     private TextView status, metrics;
     private EditText hostInput, portInput, tokenInput;
     private boolean fpsEnabled = false;
+    private int targetFps = 60;
+    private LinearLayout fpsSelector;
+    private Button fps60Button, fps90Button;
     private ShizukuPerformanceManager shizukuPerformance;
 
     @Override protected void onCreate(Bundle state) {
@@ -61,6 +64,8 @@ public class MainActivity extends Activity {
 
     private void buildUi() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        targetFps = p.getInt("target_fps", 60);
+        if (targetFps != 60 && targetFps != 90) targetFps = 60;
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
@@ -95,6 +100,20 @@ public class MainActivity extends Activity {
         modes.addView(pcCard, lp(0,0,0,8));
         modes.addView(fpsCard, lp(0,0,0,14));
         root.addView(modes);
+
+        fpsSelector = new LinearLayout(this);
+        fpsSelector.setOrientation(LinearLayout.HORIZONTAL);
+        fpsSelector.setWeightSum(2f);
+
+        fps60Button = primaryButton("60 FPS");
+        fps90Button = secondaryButton("90 FPS");
+
+        fps60Button.setOnClickListener(v -> selectFps(60));
+        fps90Button.setOnClickListener(v -> selectFps(90));
+
+        fpsSelector.addView(fps60Button, weightLp(1f, 0, 0, 8));
+        fpsSelector.addView(fps90Button, weightLp(1f, 8, 0, 0));
+        root.addView(fpsSelector, lp(0,0,0,14));
 
         serverPanel = card();
         TextView serverTitle = label("НАСТРОЙКА СЕТИ", 13, PURPLE, Gravity.LEFT);
@@ -181,12 +200,14 @@ public class MainActivity extends Activity {
         fpsCard.setBackground(round("fps".equals(mode)?PURPLE_DARK:CARD_2,18));
 
         serverPanel.setVisibility("fps".equals(mode)?View.GONE:View.VISIBLE);
+        fpsSelector.setVisibility("fps".equals(mode)?View.VISIBLE:View.GONE);
+        updateFpsButtons();
         Button action = (Button) root.findViewWithTag("mainAction");
 
         if ("fps".equals(mode)) {
-            action.setText(fpsEnabled ? "🔥  60 FPS STABLE: ВЫКЛЮЧИТЬ" : "🔥  Включить 60 FPS STABLE");
-            metrics.setText("Режим: 60 FPS STABLE\\nСостояние: " + (fpsEnabled?"включен":"выключен"));
-            status.setText("Game Mode Performance + Fixed Performance + цель 60 FPS.");
+            action.setText(fpsEnabled ? "🔥  " + targetFps + " FPS STABLE: ВЫКЛЮЧИТЬ" : "🔥  Включить " + targetFps + " FPS STABLE");
+            metrics.setText("Режим: " + targetFps + " FPS STABLE\\nСостояние: " + (fpsEnabled?"включен":"выключен"));
+            status.setText("Game Mode Performance + Fixed Performance + цель " + targetFps + " FPS.");
         } else if (MODE_PC.equals(mode)) {
             action.setText("🖥  Запустить через ПК");
             metrics.setText("Режим: PC BOOST\\nGhostly VPN: " +
@@ -230,17 +251,53 @@ public class MainActivity extends Activity {
         refreshUi();
     }
 
+    private void selectFps(int fps) {
+        if (fps != 60 && fps != 90) return;
+
+        targetFps = fps;
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+            .edit()
+            .putInt("target_fps", fps)
+            .apply();
+
+        if (fpsEnabled) {
+            shizukuPerformance.enable(fps, new ShizukuPerformanceManager.Callback() {
+                @Override
+                public void onSuccess(String details) {
+                    status.setText("🔥 Переключено на " + fps + " FPS STABLE.");
+                    refreshUi();
+                }
+
+                @Override
+                public void onFailure(String message) {
+                    status.setText("⚠️ Профиль " + fps + " FPS выбран, но Shizuku: " + message);
+                    refreshUi();
+                }
+            });
+        } else {
+            status.setText("Выбран профиль " + fps + " FPS. Нажми включение режима.");
+            refreshUi();
+        }
+    }
+
+    private void updateFpsButtons() {
+        if (fps60Button == null || fps90Button == null) return;
+
+        fps60Button.setBackground(round(targetFps == 60 ? PURPLE_DARK : CARD_2, 14));
+        fps90Button.setBackground(round(targetFps == 90 ? PURPLE_DARK : CARD_2, 14));
+    }
+
     private void toggleFps() {
         if (!fpsEnabled) {
             fpsEnabled = true;
             PerformanceController.enable(this);
-            status.setText("🔥 60 FPS STABLE запускается: Game Mode + Fixed Performance…");
+            status.setText("🔥 " + targetFps + " FPS STABLE запускается: Game Mode + Fixed Performance…");
 
-            shizukuPerformance.enable(new ShizukuPerformanceManager.Callback() {
+            shizukuPerformance.enable(targetFps, new ShizukuPerformanceManager.Callback() {
                 @Override
                 public void onSuccess(String details) {
                     status.setText(
-                        "🔥 60 FPS STABLE + SHIZUKU включён. " +
+                        "🔥 " + targetFps + " FPS STABLE + SHIZUKU включён. " +
                         "Включены Game Mode Performance и Fixed Performance."
                     );
                     refreshUi();
@@ -261,7 +318,7 @@ public class MainActivity extends Activity {
             shizukuPerformance.disable(new ShizukuPerformanceManager.Callback() {
                 @Override
                 public void onSuccess(String details) {
-                    status.setText("✅ 60 FPS STABLE и Shizuku-профиль выключены.");
+                    status.setText("✅ " + targetFps + " FPS STABLE и Shizuku-профиль выключены.");
                     refreshUi();
                 }
 
