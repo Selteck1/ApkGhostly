@@ -6,7 +6,11 @@ android {
     namespace "com.ghostly.apk"
     compileSdk 35
 
-    buildFeatures {\n        aidl true\n    }\n\n    defaultConfig {
+    buildFeatures {
+        aidl true
+    }
+
+    defaultConfig {
         applicationId "com.ghostly.apk"
         minSdk 26
         targetSdk 35
