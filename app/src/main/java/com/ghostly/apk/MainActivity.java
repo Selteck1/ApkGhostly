@@ -43,7 +43,10 @@ public class MainActivity extends Activity {
     Button ok=b("🔐 Войти"),reg=b("📝 Регистрация");lp(r,ok,8);lp(r,reg,8);
     ok.setOnClickListener(v->{if(p.getString("nick","").equalsIgnoreCase(n.getText().toString().trim())&&p.getString("pass","").equals(sha(pw.getText().toString()))){p.edit().putBoolean("logged",true).apply();menu();}else err.setText("Неверный никнейм или пароль");});reg.setOnClickListener(v->register());setContentView(r);}
   void menu(){LinearLayout r=root();logo(r);LinearLayout.LayoutParams q=mw();q.topMargin=16;TextView h=t("👋 Привет, "+p.getString("nick","Игрок")+"!",23,true);r.addView(h,q);r.addView(t("Главное меню",16,false),mw());
-    Button s=b("📊 Статистика Standoff 2"),pr=b("👤 Мой профиль"),api=b("⚙️ Настройки API"),out=b("🚪 Выйти");lp(r,s,22);lp(r,pr,12);lp(r,api,12);lp(r,out,24);
+    Button game=b("🎮 Ghostly Arena");
+    Button s=b("📊 Статистика Standoff 2"),pr=b("👤 Мой профиль"),api=b("⚙️ Настройки API"),out=b("🚪 Выйти");
+    lp(r,game,22);lp(r,s,12);lp(r,pr,12);lp(r,api,12);lp(r,out,24);
+    game.setOnClickListener(v->startActivity(new android.content.Intent(this,GameActivity.class)));
     s.setOnClickListener(v->stats());pr.setOnClickListener(v->profile());api.setOnClickListener(v->apiSettings());out.setOnClickListener(v->{p.edit().putBoolean("logged",false).apply();login();});setContentView(r);}
   void profile(){LinearLayout r=root();logo(r);r.addView(t("👤 Профиль",26,true),mw());card(r,"Никнейм",p.getString("nick","—"));card(r,"ID Standoff 2",p.getString("id","—"));Button back=b("← Назад");lp(r,back,18);back.setOnClickListener(v->menu());setContentView(r);}
   void apiSettings(){LinearLayout r=root();logo(r);r.addView(t("⚙️ Настройки API",26,true),mw());r.addView(t("Укажи адрес своего Ghostly API",15,false),mw());EditText e=f("http://192.168.1.100:8081");e.setText(p.getString("url",""));lp(r,e,14);Button save=b("💾 Сохранить"),test=b("🔎 Проверить"),back=b("← Назад");lp(r,save,10);lp(r,test,10);TextView st=t("",14,false);st.setTextColor(SOFT);lp(r,st,12);lp(r,back,18);
