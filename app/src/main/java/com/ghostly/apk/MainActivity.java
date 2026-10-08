@@ -88,8 +88,8 @@ public class MainActivity extends Activity {
             "Изменяет маршрут Standoff 2 через relay\\nТолько игровой трафик", MODE_RELAY);
         pcCard = modeCard("🖥  PC BOOST",
             "Телефон → твой ПК → Standoff 2\\nБез VPS", MODE_PC);
-        fpsCard = modeCard("🔥  MAX FPS",
-            "Максимум доступной производительности\\nЭкран • питание • стабильность", "fps");
+        fpsCard = modeCard("🔥  60 FPS STABLE",
+            "Performance + целевой режим 60 FPS\\nCPU • Game Mode • экран", "fps");
 
         modes.addView(relayCard, lp(0,0,0,8));
         modes.addView(pcCard, lp(0,0,0,8));
@@ -184,9 +184,9 @@ public class MainActivity extends Activity {
         Button action = (Button) root.findViewWithTag("mainAction");
 
         if ("fps".equals(mode)) {
-            action.setText(fpsEnabled ? "🔥  MAX FPS: ВЫКЛЮЧИТЬ" : "🔥  Включить MAX FPS");
-            metrics.setText("Режим: MAX FPS\\nСостояние: " + (fpsEnabled?"включен":"выключен"));
-            status.setText("Высокая частота экрана + снятие battery-ограничения для Ghostly.");
+            action.setText(fpsEnabled ? "🔥  60 FPS STABLE: ВЫКЛЮЧИТЬ" : "🔥  Включить 60 FPS STABLE");
+            metrics.setText("Режим: 60 FPS STABLE\\nСостояние: " + (fpsEnabled?"включен":"выключен"));
+            status.setText("Game Mode Performance + Fixed Performance + цель 60 FPS.");
         } else if (MODE_PC.equals(mode)) {
             action.setText("🖥  Запустить через ПК");
             metrics.setText("Режим: PC BOOST\\nGhostly VPN: " +
@@ -234,14 +234,14 @@ public class MainActivity extends Activity {
         if (!fpsEnabled) {
             fpsEnabled = true;
             PerformanceController.enable(this);
-            status.setText("🔥 Базовый MAX PERFORMANCE включён. Проверяю Shizuku…");
+            status.setText("🔥 60 FPS STABLE запускается: Game Mode + Fixed Performance…");
 
             shizukuPerformance.enable(new ShizukuPerformanceManager.Callback() {
                 @Override
                 public void onSuccess(String details) {
                     status.setText(
-                        "🔥 MAX PERFORMANCE + SHIZUKU включён. " +
-                        "Android получил команду Fixed Performance."
+                        "🔥 60 FPS STABLE + SHIZUKU включён. " +
+                        "Включены Game Mode Performance и Fixed Performance."
                     );
                     refreshUi();
                 }
@@ -249,7 +249,7 @@ public class MainActivity extends Activity {
                 @Override
                 public void onFailure(String message) {
                     status.setText(
-                        "⚠️ Обычный MAX PERFORMANCE работает. Shizuku: " +
+                        "⚠️ Базовый режим производительности работает. Shizuku: " +
                         message
                     );
                     refreshUi();
@@ -261,7 +261,7 @@ public class MainActivity extends Activity {
             shizukuPerformance.disable(new ShizukuPerformanceManager.Callback() {
                 @Override
                 public void onSuccess(String details) {
-                    status.setText("✅ MAX PERFORMANCE и Shizuku-профиль выключены.");
+                    status.setText("✅ 60 FPS STABLE и Shizuku-профиль выключены.");
                     refreshUi();
                 }
 
