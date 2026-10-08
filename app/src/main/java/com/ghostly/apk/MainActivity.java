@@ -49,10 +49,12 @@ public class MainActivity extends Activity {
     private LinearLayout relayCard, pcCard, fpsCard;
     private TextView status, metrics;
     private EditText hostInput, portInput, tokenInput;
-    private boolean fpsEnabled = false;\n    private ShizukuPerformanceManager shizukuPerformance;
+    private boolean fpsEnabled = false;
+    private ShizukuPerformanceManager shizukuPerformance;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        shizukuPerformance = new ShizukuPerformanceManager(this);
         buildUi();
         refreshUi();
     }
@@ -145,9 +147,13 @@ public class MainActivity extends Activity {
         battery.setOnClickListener(v -> PerformanceController.requestIgnoreBattery(this));
         root.addView(battery,lp(0,0,0,8));
 
+        Button shizuku = secondaryButton("🧩  Открыть / настроить Shizuku");
+        shizuku.setOnClickListener(v -> openShizuku());
+        root.addView(shizuku,lp(0,0,0,8));
+
         TextView foot = label(
             "⚠️ Маршрут не может гарантировать нулевые потери или меньший ping: результат зависит от провайдера и маршрута.\\n" +
-            "MAX FPS не отключает системный thermal control Android.",
+            "Shizuku даёт ADB-level доступ без root; Fixed Performance поддерживается не на всех устройствах.",
             12,MUTED,Gravity.CENTER);
         root.addView(foot,lp(0,12,0,0));
 
@@ -346,7 +352,19 @@ public class MainActivity extends Activity {
     private Button secondaryButton(String text) { Button b=baseButton(text); b.setTextColor(WHITE); b.setBackground(round(CARD_2,14)); return b; }
     private Button baseButton(String text) { Button b=new Button(this); b.setText(text); b.setAllCaps(false); b.setTextSize(14); b.setMinHeight(dp(52)); b.setPadding(dp(12),0,dp(12),0); return b; }
 
-    private void openShizuku() {\n        try {\n            Intent i = getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");\n            if (i != null) {\n                startActivity(i);\n                return;\n            }\n            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/"));\n            startActivity(web);\n        } catch (Exception e) {\n            status.setText("Установи Shizuku из официального источника.");\n        }\n    }\n\n    private void launchPackage(String pkg) {
+    private void openShizuku() {
+        try {
+            Intent i = getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");
+            if (i != null) {
+                startActivity(i);
+                return;
+            }
+            Intent web = new Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/"));
+            startActivity(web);
+        } catch (Exception e) {
+            status.setText("Установи Shizuku из официального источника.");
+        }
+    }\n\n    private void launchPackage(String pkg) {
         try { Intent i=getPackageManager().getLaunchIntentForPackage(pkg); if(i!=null){startActivity(i);return;} openPackageSettings(pkg); }
         catch(Exception e){openPackageSettings(pkg);}
     }
@@ -365,7 +383,14 @@ public class MainActivity extends Activity {
 
     private android.graphics.drawable.GradientDrawable round(int color,int radius) { android.graphics.drawable.GradientDrawable d=new android.graphics.drawable.GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
     private LinearLayout.LayoutParams lp(int l,int t,int r,int b) { LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT); p.setMargins(dp(l),dp(t),dp(r),dp(b)); return p; }
-    @Override protected void onDestroy() {\n        try {\n            if (shizukuPerformance != null) shizukuPerformance.shutdown();\n        } catch (Exception ignored) {}\n        super.onDestroy();\n    }\n\n    private int dp(int value) { return Math.round(value*getResources().getDisplayMetrics().density); }
+    @Override protected void onDestroy() {
+        try {
+            if (shizukuPerformance != null) shizukuPerformance.shutdown();
+        } catch (Exception ignored) {}
+        super.onDestroy();
+    }
+
+    private int dp(int value) { return Math.round(value*getResources().getDisplayMetrics().density); }
 
     private static final class Config {
         final String host; final int port; final String token;
