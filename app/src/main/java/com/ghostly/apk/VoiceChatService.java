@@ -15,7 +15,6 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.*;
 
-import androidx.annotation.Nullable;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -468,7 +467,7 @@ public class VoiceChatService extends Service {
         super.onTaskRemoved(rootIntent);
     }
 
-    @Nullable @Override public IBinder onBind(Intent intent) { return null; }
+    @Override public IBinder onBind(Intent intent) { return null; }
 
     private static int dp(int v) {
         return Math.round(v * android.content.res.Resources.getSystem().getDisplayMetrics().density);
