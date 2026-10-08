@@ -89,12 +89,13 @@ public class PerformanceUserService extends IPerformanceService.Stub {
         Process process = null;
         try {
             process = Runtime.getRuntime().exec(command);
+            final Process currentProcess = process;
 
             ByteArrayOutputStream stdout = new ByteArrayOutputStream();
             ByteArrayOutputStream stderr = new ByteArrayOutputStream();
 
-            Thread outThread = new Thread(() -> copyQuiet(processInput(process), stdout), "ghostly-shizuku-out");
-            Thread errThread = new Thread(() -> copyQuiet(processError(process), stderr), "ghostly-shizuku-err");
+            Thread outThread = new Thread(() -> copyQuiet(processInput(currentProcess), stdout), "ghostly-shizuku-out");
+            Thread errThread = new Thread(() -> copyQuiet(processError(currentProcess), stderr), "ghostly-shizuku-err");
             outThread.start();
             errThread.start();
 
