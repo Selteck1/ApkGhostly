@@ -82,9 +82,22 @@ function I(){return[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]}
 function mul(a,b){let r=new Array(16).fill(0);for(let i=0;i<4;i++)for(let j=0;j<4;j++)for(let k=0;k<4;k++)r[i*4+j]+=a[i*4+k]*b[k*4+j];return r}
 function tr(x,y,z,sx,sy,sz){let m=I();m[0]=sx;m[5]=sy;m[10]=sz;m[12]=x;m[13]=y;m[14]=z;return m}
 function persp(fovy,asp,n,f){let t=1/Math.tan(fovy/2),m=new Array(16).fill(0);m[0]=t/asp;m[5]=t;m[10]=(f+n)/(n-f);m[11]=-1;m[14]=(2*f*n)/(n-f);return m}
-function camMatrix(pos,yaw,pitch){const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);return[
-cy,sy*sp,-sy*cp,0, 0,cp,sp,0, sy,-cy*sp,cy*cp,0,
--pos[0]*cy-pos[2]*sy, -pos[1]*cp+pos[2]*0-pos[0]*sy*sp+pos[2]*cy*sp, pos[0]*cp*sy-pos[2]*cp*cy-pos[1]*sp,1]}
+function lookAt(eye,target,up=[0,1,0]){
+  const z0=eye[0]-target[0],z1=eye[1]-target[1],z2=eye[2]-target[2];
+  let zl=Math.hypot(z0,z1,z2)||1;const zx=z0/zl,zy=z1/zl,zz=z2/zl;
+  let xx=up[1]*zz-up[2]*zy,xy=up[2]*zx-up[0]*zz,xz=up[0]*zy-up[1]*zx;
+  let xl=Math.hypot(xx,xy,xz)||1;xx/=xl;xy/=xl;xz/=xl;
+  const yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+  return [xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+    -(xx*eye[0]+xy*eye[1]+xz*eye[2]),
+    -(yx*eye[0]+yy*eye[1]+yz*eye[2]),
+    -(zx*eye[0]+zy*eye[1]+zz*eye[2]),1]
+}
+function camMatrix(pos,yaw,pitch){
+  const cp=Math.cos(pitch),sp=Math.sin(pitch),cy=Math.cos(yaw),sy=Math.sin(yaw);
+  const dir=[sy*cp,-sp,-cy*cp];
+  return lookAt(pos,[pos[0]+dir[0],pos[1]+dir[1],pos[2]+dir[2]],[0,1,0]);
+}
 function cubeDraw(x,y,z,sx,sy,sz,col){gl.uniformMatrix4fv(locM,false,new Float32Array(tr(x,y,z,sx,sy,sz)));gl.uniform3fv(locC,new Float32Array(col));gl.drawArrays(gl.TRIANGLE_FAN,0,24)}
 
 const walls=[];
@@ -169,8 +182,9 @@ function reload(){
 function switchWeapon(){weaponIndex=(weaponIndex+1)%weapons.length}
 function buy(){
   if(phase!=='buy')return;
-  if(money>=1100&&weaponIndex===0&&confirm('Купить SMG за $1100?')){money-=1100;weaponIndex=1}
-  else if(money>=1700&&weaponIndex!==2&&confirm('Купить Rifle за $1700?')){money-=1700;weaponIndex=2}
+  if(money>=1700&&weaponIndex<2){money-=1700;weaponIndex=2;banner('RIFLE PURCHASED')}
+  else if(money>=1100&&weaponIndex<1){money-=1100;weaponIndex=1;banner('SMG PURCHASED')}
+  else banner('Недостаточно денег');
 }
 
 function botThink(dt){
