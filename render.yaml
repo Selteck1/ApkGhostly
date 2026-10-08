@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: ghostly-voice-relay
+    runtime: node
+    rootDir: server/voice-relay
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
