@@ -177,11 +177,11 @@ public class MatchAnalyzerActivity extends Activity {
     }
 
     private void parseLine(String raw,Set<String> seen){
-        String s=raw.replaceAll("\s+"," ").trim();
+        String s=raw.replaceAll("\\s+"," ").trim();
         if(s.length()<3)return;
-        Matcher m=Pattern.compile("^(.*?)[ :|]+(\d+)\s+(\d+)(?:\s+(\d+))?(?:\s+(\d+))?$").matcher(s);
+        Matcher m=Pattern.compile("^(.*?)[ :|]+(\\d+)\\s+(\\d+)(?:\\s+(\\d+))?(?:\\s+(\\d+))?$").matcher(s);
         if(!m.find())return;
-        String name=m.group(1).replaceAll("^[#•·\-]+","").trim();
+        String name=m.group(1).replaceAll("^[#•·\\-]+","").trim();
         if(name.length()<2 || name.length()>28)return;
         if(name.matches("(?i).*(kill|death|assist|score|round|player|команд|игрок|убий|смер|сч[её]т).*"))return;
 
