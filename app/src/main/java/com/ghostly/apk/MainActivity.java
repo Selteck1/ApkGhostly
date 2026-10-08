@@ -85,6 +85,14 @@ public class MainActivity extends Activity {
         root.addView(title, lp(0,0,0,2));
         root.addView(subtitle, lp(0,0,0,16));
 
+        Button voiceChat = primaryButton("🎙️  GHOSTLY VOICE — Голосовой чат");
+        voiceChat.setOnClickListener(v -> startActivity(new Intent(this, VoiceChatActivity.class)));
+        root.addView(voiceChat, lp(0,0,0,10));
+
+        Button roadGame = secondaryButton("🚗  Ghostly Road — игра");
+        roadGame.setOnClickListener(v -> startActivity(new Intent(this, GameActivity.class)));
+        root.addView(roadGame, lp(0,0,0,16));
+
         root.addView(sectionTitle("РЕЖИМЫ GHOSTLY"), lp(0,6,0,8));
         LinearLayout modes = new LinearLayout(this);
         modes.setOrientation(LinearLayout.VERTICAL);
