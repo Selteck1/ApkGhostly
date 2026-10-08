@@ -15,7 +15,6 @@ import java.io.FileOutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -39,8 +38,6 @@ public class GhostlyVpnService extends VpnService {
     private ParcelFileDescriptor vpnInterface;
     private ParcelFileDescriptor inputFd;
     private ParcelFileDescriptor outputFd;
-    private Thread tunReader;
-    private Thread relayReader;
     private String token;
 
     public static boolean isRunning() {
@@ -62,7 +59,7 @@ public class GhostlyVpnService extends VpnService {
             token = intent.getStringExtra(EXTRA_TOKEN);
 
             cleanupResources();
-            promoteToForeground(host, port);
+            promoteToForeground(host == null ? "" : host, port);
             startTunnel(host, port, token);
         }
 
@@ -71,7 +68,7 @@ public class GhostlyVpnService extends VpnService {
 
     private void startTunnel(String host, int port, String secret) {
         if (host == null || host.trim().isEmpty() || secret == null || secret.isEmpty()) {
-            stopSelf();
+            stopTunnel();
             return;
         }
 
@@ -79,9 +76,13 @@ public class GhostlyVpnService extends VpnService {
             try {
                 relaySocket = new DatagramSocket();
                 relaySocket.setSoTimeout(1000);
+                relaySocket.setReceiveBufferSize(4 * 1024 * 1024);
+                relaySocket.setSendBufferSize(4 * 1024 * 1024);
+
                 if (!protect(relaySocket)) {
                     throw new Exception("Не удалось защитить UDP socket от VPN loop.");
                 }
+
                 relaySocket.connect(new InetSocketAddress(host.trim(), port));
 
                 byte[] hello = RelayProtocol.handshake(secret);
@@ -98,8 +99,7 @@ public class GhostlyVpnService extends VpnService {
                     .setSession("Ghostly Booster")
                     .setMtu(MTU)
                     .addAddress(handshake.virtualIp, 32)
-                    .addRoute("0.0.0.0", 0)
-                    .addDnsServer("1.1.1.1");
+                    .addRoute("0.0.0.0", 0);
 
                 try {
                     builder.addAllowedApplication(GAME_PACKAGE);
@@ -110,20 +110,22 @@ public class GhostlyVpnService extends VpnService {
                 }
 
                 vpnInterface = builder.establish();
-                if (vpnInterface == null) throw new Exception("Android не создал VPN-интерфейс.");
+                if (vpnInterface == null) {
+                    throw new Exception("Android не создал VPN-интерфейс.");
+                }
 
                 inputFd = ParcelFileDescriptor.dup(vpnInterface.getFileDescriptor());
                 outputFd = ParcelFileDescriptor.dup(vpnInterface.getFileDescriptor());
 
                 active.set(true);
                 running = true;
+                updateNotification(host, port);
                 startTunnelThreads();
 
             } catch (Exception e) {
                 running = false;
                 active.set(false);
-                cleanupResources();
-                stopSelf();
+                stopTunnel();
             }
         }, "GhostlyVpnStart").start();
     }
@@ -150,7 +152,7 @@ public class GhostlyVpnService extends VpnService {
 
         builder.setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("👻 Ghostly Boost")
-            .setContentText("Relay " + host + ":" + port + " • Standoff 2")
+            .setContentText("Подключение к relay…")
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE);
 
@@ -158,23 +160,39 @@ public class GhostlyVpnService extends VpnService {
             startForeground(
                 NOTIFICATION_ID,
                 builder.build(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             );
         } else {
             startForeground(NOTIFICATION_ID, builder.build());
         }
     }
 
+    private void updateNotification(String host, int port) {
+        NotificationManager manager =
+            (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        Notification.Builder builder =
+            Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, "ghostly_booster")
+                : new Notification.Builder(this);
+
+        builder.setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("👻 Ghostly Boost")
+            .setContentText("Relay " + host + ":" + port + " • Standoff 2")
+            .setOngoing(true)
+            .setCategory(Notification.CATEGORY_SERVICE);
+
+        manager.notify(NOTIFICATION_ID, builder.build());
+    }
+
     private void startTunnelThreads() {
-        tunReader = new Thread(this::readFromTun, "GhostlyTunReader");
-        relayReader = new Thread(this::readFromRelay, "GhostlyRelayReader");
-        tunReader.start();
-        relayReader.start();
+        new Thread(this::readFromTun, "GhostlyTunReader").start();
+        new Thread(this::readFromRelay, "GhostlyRelayReader").start();
     }
 
     private void readFromTun() {
         try (FileInputStream in = new FileInputStream(inputFd.getFileDescriptor())) {
             byte[] buffer = new byte[65535];
+
             while (active.get()) {
                 int n = in.read(buffer);
                 if (n <= 0) continue;
@@ -193,6 +211,7 @@ public class GhostlyVpnService extends VpnService {
         } finally {
             active.set(false);
             running = false;
+            stopSelf();
         }
     }
 
@@ -215,7 +234,7 @@ public class GhostlyVpnService extends VpnService {
                         out.flush();
                     }
                 } catch (java.net.SocketTimeoutException timeout) {
-                    // send keepalive below
+                    // keepalive below
                 } catch (Exception ignored) {
                 }
 
@@ -232,10 +251,11 @@ public class GhostlyVpnService extends VpnService {
         } finally {
             active.set(false);
             running = false;
+            stopSelf();
         }
     }
 
-    private synchronized void stopTunnel() {
+    private synchronized void cleanupResources() {
         active.set(false);
         running = false;
 
@@ -248,7 +268,10 @@ public class GhostlyVpnService extends VpnService {
         inputFd = null;
         outputFd = null;
         vpnInterface = null;
+    }
 
+    private synchronized void stopTunnel() {
+        cleanupResources();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
