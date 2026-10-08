@@ -48,8 +48,8 @@ public class MainActivity extends Activity {
 
     private LinearLayout root;
     private LinearLayout vpsPanel;
-    private TextView modeDirect;
-    private TextView modeVps;
+    private LinearLayout modeDirect;
+    private LinearLayout modeVps;
     private TextView metrics;
     private TextView status;
     private EditText hostInput;
