@@ -2,6 +2,10 @@ plugins {
     id "com.android.application"
 }
 
+dependencies {
+    implementation "com.google.mlkit:text-recognition:16.0.1"
+}
+
 android {
     namespace "com.ghostly.apk"
     compileSdk 35
