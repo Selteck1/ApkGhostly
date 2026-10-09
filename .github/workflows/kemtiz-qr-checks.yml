@@ -1,0 +1,137 @@
+name: Kemtiz QR login validation
+
+on:
+  pull_request:
+    branches: ["kemtiz-messenger"]
+  push:
+    branches: ["kemtiz-qr-login"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend and frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install backend dependencies
+        run: python -m pip install -r kemtiz/requirements.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q kemtiz/server.py kemtiz/test_server.py
+
+      - name: Check browser JavaScript syntax
+        run: node --check kemtiz/web/app.js
+
+      - name: Run API tests
+        working-directory: kemtiz
+        run: python -m unittest -v test_server
+
+  android-build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Restore intro video
+        run: |
+          mkdir -p app/src/main/res/raw
+          base64 --decode assets/ghostly_intro.mp4.b64 > app/src/main/res/raw/ghostly_intro.mp4
+          test -s app/src/main/res/raw/ghostly_intro.mp4
+
+      - name: Assemble Android debug APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Verify APK exists
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
+
+  windows-build:
+    name: Build Windows EXE and installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            kemtiz/requirements.txt
+            kemtiz/desktop/requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r kemtiz/requirements.txt -r kemtiz/desktop/requirements.txt
+
+      - name: Generate new Kemtiz icon
+        run: python kemtiz/desktop/make_icon.py
+
+      - name: Compile Python sources
+        run: python -m compileall -q kemtiz/server.py kemtiz/desktop/launcher.py kemtiz/desktop/make_icon.py
+
+      - name: Package Kemtiz.exe
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name Kemtiz
+          --icon kemtiz/desktop/kemtiz.ico
+          --paths kemtiz
+          --add-data "kemtiz/server.py;."
+          --add-data "kemtiz/web;web"
+          --collect-all PySide6
+          --collect-all shiboken6
+          --collect-submodules uvicorn
+          --hidden-import server
+          kemtiz/desktop/launcher.py
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+
+      - name: Compile installer
+        shell: powershell
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) { $compiler = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
+          if (!(Test-Path $compiler)) { throw "Inno Setup compiler was not installed." }
+          & $compiler "kemtiz\desktop\installer.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path "dist\Kemtiz-Setup.exe")) { throw "Kemtiz-Setup.exe was not created." }
+
+      - name: Upload Windows installer for validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kemtiz-Setup-validation
+          path: dist/Kemtiz-Setup.exe
+          if-no-files-found: error
+          retention-days: 14
