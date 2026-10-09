@@ -124,13 +124,17 @@ jobs:
             echo "Google Cloud → Android OAuth client → SHA-1 certificate fingerprint."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Prepare Android release files
+        run: |
+          mkdir -p android-release
+          cp app/build/outputs/apk/debug/app-debug.apk android-release/Kemtiz-Android-LAN.apk
+          cp Android-OAuth-SHA1.txt android-release/Android-OAuth-SHA1.txt
+
       - name: Upload Android APK and OAuth fingerprint
         uses: actions/upload-artifact@v4
         with:
           name: Kemtiz-Android-LAN
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            Android-OAuth-SHA1.txt
+          path: android-release/*
           if-no-files-found: error
           retention-days: 30
 
@@ -153,7 +157,6 @@ jobs:
 
       - name: Prepare release files
         run: |
-          mv release-assets/app-debug.apk release-assets/Kemtiz-Android-LAN.apk
           ls -lh release-assets
 
       - name: Publish preview release
