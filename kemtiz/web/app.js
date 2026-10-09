@@ -135,6 +135,10 @@
   }
 
   function initializeGoogleButton() {
+    if (window.KemtizNativeGoogle && typeof window.KemtizNativeGoogle.signIn === "function") {
+      $("googleSetupButton").classList.remove("hidden");
+      return;
+    }
     let attempts = 0;
     const tryRender = () => {
       if (!window.google || !window.google.accounts || !window.google.accounts.id) {
@@ -180,11 +184,27 @@
     tryRender();
   }
 
+  window.KemtizNativeGoogleCredential = (credential) => {
+    if (typeof credential === "string" && credential) {
+      handleGoogleCredential(credential);
+    } else {
+      $("authError").textContent = "Не удалось получить подтверждение Google-аккаунта.";
+    }
+  };
+
+  window.KemtizNativeGoogleError = (message) => {
+    $("authError").textContent = String(message || "Не удалось войти через Google.");
+  };
+
   $("googleSetupButton").addEventListener("click", () => {
     if (!state.googleClientId) {
       $("authError").textContent = "Для входа настрой KEMTIZ_GOOGLE_CLIENT_ID в конфигурации сервера. Google не позволяет вход без OAuth Client ID.";
+    } else if (window.KemtizNativeGoogle && typeof window.KemtizNativeGoogle.signIn === "function") {
+      $("authError").textContent = "";
+      window.KemtizNativeGoogle.signIn(state.googleClientId);
     } else {
       $("authError").textContent = "Google Sign-In загружается. Подожди пару секунд и попробуй снова.";
+      initializeGoogleButton();
     }
   });
 
