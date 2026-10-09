@@ -20,8 +20,25 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
+      - name: Prepare Android debug key directory
+        run: mkdir -p "$HOME/.android"
+      - name: Restore stable Kemtiz debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: kemtiz-debug-signing-key-v1
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
+      - name: Print APK certificate SHA-1 for Google OAuth
+        shell: bash
+        run: |
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          APKSIGNER="$(find "$SDK_DIR/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "apksigner not found in Android SDK build-tools" >&2
+            exit 1
+          fi
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
