@@ -196,6 +196,50 @@
     $("authError").textContent = String(message || "Не удалось войти через Google.");
   };
 
+  window.KemtizNativeQrScanned = async (rawValue) => {
+    const match = String(rawValue || "").trim().match(/^kemtiz:\/\/desktop-login\/([A-Za-z0-9_-]{20,100})$/);
+    if (!match) {
+      showToast("Это не QR-код входа в Kemtiz Desktop.", true);
+      return;
+    }
+    if (!state.token || !state.me) {
+      showToast("Сначала войди в Kemtiz на телефоне.", true);
+      return;
+    }
+    const sessionId = match[1];
+    try {
+      const session = await api("/api/auth/desktop/qr/" + encodeURIComponent(sessionId));
+      if (session.status !== "pending" || session.expires_in <= 0) {
+        showToast("Этот QR-код уже истёк или использован. Обнови его на компьютере.", true);
+        return;
+      }
+      const deviceName = String(session.device_name || "компьютере").slice(0, 80);
+      const confirmed = window.confirm(
+        "Разрешить вход в Kemtiz на устройстве:\n\n" + deviceName +
+        "\n\nПодтверждай только если этот QR-код открыт на твоём компьютере."
+      );
+      if (!confirmed) {
+        await api("/api/auth/desktop/qr/" + encodeURIComponent(sessionId) + "/deny", {
+          method: "POST", body: {}
+        });
+        showToast("Вход на компьютер отклонён.");
+        return;
+      }
+      await api("/api/auth/desktop/qr/" + encodeURIComponent(sessionId) + "/approve", {
+        method: "POST", body: {}
+      });
+      showToast("Вход подтверждён. Вернись в Kemtiz на компьютере.");
+    } catch (error) {
+      showToast(error.message || "Не удалось подтвердить вход на компьютере.", true);
+    }
+  };
+
+  window.KemtizNativeQrError = (message) => {
+    const text = String(message || "Не удалось отсканировать QR-код.");
+    if (text.includes("отменено")) return;
+    showToast(text, true);
+  };
+
   $("googleSetupButton").addEventListener("click", () => {
     if (!state.googleClientId) {
       $("authError").textContent = "Для входа настрой KEMTIZ_GOOGLE_CLIENT_ID в конфигурации сервера. Google не позволяет вход без OAuth Client ID.";
@@ -278,6 +322,18 @@
   }
 
   $("logoutButton").addEventListener("click", () => logout(true));
+
+  $("connectPcButton").addEventListener("click", () => {
+    if (!state.token || !state.me) {
+      showToast("Сначала войди в Kemtiz на телефоне.", true);
+      return;
+    }
+    if (window.KemtizNativeGoogle && typeof window.KemtizNativeGoogle.scanQrCode === "function") {
+      window.KemtizNativeGoogle.scanQrCode();
+    } else {
+      showToast("Сканирование QR-кода доступно в Android-приложении Kemtiz.", true);
+    }
+  });
 
   async function refreshAll() {
     await Promise.allSettled([refreshFriends(), refreshRequests(), refreshChats()]);
