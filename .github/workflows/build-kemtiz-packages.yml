@@ -1,0 +1,108 @@
+name: Build Kemtiz Desktop and Android
+
+on:
+  push:
+    branches: ["kemtiz-messenger"]
+    paths:
+      - "kemtiz/desktop/**"
+      - "kemtiz/server.py"
+      - "kemtiz/requirements.txt"
+      - "kemtiz/web/**"
+      - "app/src/main/java/com/kemtiz/app/KemtizActivity.java"
+      - "app/src/main/res/xml/network_security_config.xml"
+      - "assets/ghostly_intro.mp4.b64"
+      - ".github/workflows/build-kemtiz-packages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            kemtiz/requirements.txt
+            kemtiz/desktop/requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r kemtiz/requirements.txt -r kemtiz/desktop/requirements.txt
+
+      - name: Generate Kemtiz icon
+        run: python kemtiz/desktop/make_icon.py
+
+      - name: Validate Python sources
+        run: python -m compileall -q kemtiz/server.py kemtiz/desktop/launcher.py kemtiz/desktop/make_icon.py
+
+      - name: Package Kemtiz.exe
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name Kemtiz
+          --icon kemtiz/desktop/kemtiz.ico
+          --paths kemtiz
+          --add-data "kemtiz/server.py;."
+          --add-data "kemtiz/web;web"
+          --collect-all webview
+          --collect-submodules uvicorn
+          kemtiz/desktop/launcher.py
+
+      - name: Include desktop instructions
+        run: Copy-Item kemtiz/desktop/README.md dist/README-Desktop.txt
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kemtiz-Desktop-Windows
+          path: |
+            dist/Kemtiz.exe
+            dist/README-Desktop.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  android-apk:
+    name: Build Android APK with LAN support
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Restore embedded intro video
+        run: |
+          mkdir -p app/src/main/res/raw
+          base64 --decode assets/ghostly_intro.mp4.b64 > app/src/main/res/raw/ghostly_intro.mp4
+          test -s app/src/main/res/raw/ghostly_intro.mp4
+
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kemtiz-Android-LAN
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
