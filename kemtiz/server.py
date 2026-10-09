@@ -17,6 +17,13 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 import httpx
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # SQLite-only local development does not require psycopg.
+    psycopg = None
+    dict_row = None
+
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -26,6 +33,11 @@ WEB_DIR = ROOT / "web"
 DATA_DIR = Path(os.environ.get("KEMTIZ_DATA_DIR", str(ROOT / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = Path(os.environ.get("KEMTIZ_DB_PATH", str(DATA_DIR / "kemtiz.sqlite3")))
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+USE_POSTGRES = DATABASE_URL.startswith(("postgres://", "postgresql://"))
+INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + (
+    (psycopg.IntegrityError,) if psycopg is not None else ()
+)
 SECRET_PATH = DATA_DIR / ".token_secret"
 
 
@@ -54,12 +66,134 @@ app = FastAPI(title="Kemtiz", version="0.1.0", docs_url="/api/docs", redoc_url=N
 app.mount("/assets", StaticFiles(directory=str(WEB_DIR)), name="assets")
 
 
+class _PostgresCursor:
+    """Small DB-API adapter for the SQLite-like cursor operations used by Kemtiz."""
+
+    def __init__(self, cursor, returning_id: bool = False):
+        self._cursor = cursor
+        self._returning_id = returning_id
+        self._id_loaded = False
+        self._lastrowid = None
+        self._prefetched = None
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    @property
+    def lastrowid(self):
+        if self._returning_id and not self._id_loaded:
+            self._prefetched = self._cursor.fetchone()
+            self._lastrowid = self._prefetched["id"] if self._prefetched else None
+            self._id_loaded = True
+        return self._lastrowid
+
+    def fetchone(self):
+        if self._prefetched is not None:
+            value, self._prefetched = self._prefetched, None
+            return value
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        if self._prefetched is not None:
+            rows.insert(0, self._prefetched)
+            self._prefetched = None
+        return rows
+
+
+class _PostgresConnection:
+    """Translate the small subset of SQLite syntax used by Kemtiz to PostgreSQL."""
+
+    def __init__(self, connection):
+        self._connection = connection
+
+    @property
+    def row_factory(self):
+        return None
+
+    @row_factory.setter
+    def row_factory(self, _value):
+        # Psycopg is already configured to return dictionary-like rows.
+        pass
+
+    def _translate(self, statement: str) -> tuple[str, bool]:
+        sql = statement.strip()
+        if not sql:
+            return sql, False
+
+        upper = sql.upper()
+        if upper.startswith("PRAGMA "):
+            return "SELECT 1 WHERE FALSE", False
+
+        sql = re.sub(r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b",
+                     "BIGSERIAL PRIMARY KEY", sql, flags=re.IGNORECASE)
+        sql = re.sub(r"\s+COLLATE\s+NOCASE\b", "", sql, flags=re.IGNORECASE)
+        sql = re.sub(r"\bLIKE\b", "ILIKE", sql, flags=re.IGNORECASE)
+        sql = re.sub(r"MAX\(last_read_id\s*,\s*\?\)",
+                     "GREATEST(last_read_id,?)", sql, flags=re.IGNORECASE)
+        ignore_conflicts = bool(re.match(r"INSERT\s+OR\s+IGNORE\s+INTO\b", sql, re.IGNORECASE))
+        if ignore_conflicts:
+            sql = re.sub(r"^INSERT\s+OR\s+IGNORE\s+INTO\b",
+                         "INSERT INTO", sql, flags=re.IGNORECASE)
+            if "ON CONFLICT" not in sql.upper():
+                sql += " ON CONFLICT DO NOTHING"
+        sql = sql.replace("?", "%s")
+
+        # These inserts need their generated ID immediately after execution.
+        needs_id = bool(re.match(r"INSERT\s+INTO\s+(users|chats|messages)\b", sql, re.IGNORECASE))
+        if needs_id and "RETURNING" not in sql.upper():
+            sql += " RETURNING id"
+        return sql, needs_id
+
+    def execute(self, statement, parameters=()):
+        sql, needs_id = self._translate(statement)
+        cursor = self._connection.cursor()
+        cursor.execute(sql, tuple(parameters or ()))
+        return _PostgresCursor(cursor, returning_id=needs_id)
+
+    def executemany(self, statement, seq_of_parameters):
+        sql, _ = self._translate(statement)
+        cursor = self._connection.cursor()
+        cursor.executemany(sql, seq_of_parameters)
+        return _PostgresCursor(cursor)
+
+    def executescript(self, script: str):
+        # The schema contains plain DDL statements separated by semicolons.
+        for statement in script.split(";"):
+            if statement.strip():
+                self.execute(statement)
+        return _PostgresCursor(self._connection.cursor())
+
+    def commit(self):
+        self._connection.commit()
+
+    def rollback(self):
+        self._connection.rollback()
+
+    def close(self):
+        self._connection.close()
+
+
 @contextmanager
 def db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA busy_timeout=10000")
+    if USE_POSTGRES:
+        if psycopg is None:
+            raise RuntimeError(
+                "DATABASE_URL uses PostgreSQL, but psycopg is missing. "
+                "Install the dependencies from kemtiz/requirements.txt."
+            )
+        connection_url = DATABASE_URL
+        if connection_url.startswith("postgres://"):
+            connection_url = "postgresql://" + connection_url[len("postgres://"):]
+        conn = _PostgresConnection(
+            psycopg.connect(connection_url, row_factory=dict_row, connect_timeout=10)
+        )
+    else:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=10000")
     try:
         yield conn
         conn.commit()
@@ -72,7 +206,8 @@ def db():
 
 def init_db() -> None:
     with db() as c:
-        c.execute("PRAGMA journal_mode=WAL")
+        if not USE_POSTGRES:
+            c.execute("PRAGMA journal_mode=WAL")
         c.executescript("""
         CREATE TABLE IF NOT EXISTS users(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,7 +295,16 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_desktop_login_expiry
           ON desktop_login_sessions(expires_at);
         """)
-        user_columns = {row["name"] for row in c.execute("PRAGMA table_info(users)").fetchall()}
+        if USE_POSTGRES:
+            user_columns = {
+                row["name"] for row in c.execute(
+                    "SELECT column_name AS name FROM information_schema.columns "
+                    "WHERE table_schema = current_schema() AND table_name = ?",
+                    ("users",),
+                ).fetchall()
+            }
+        else:
+            user_columns = {row["name"] for row in c.execute("PRAGMA table_info(users)").fetchall()}
         migrations = {
             "phone_number": "TEXT",
             "google_sub": "TEXT",
@@ -486,7 +630,7 @@ def login_existing_google_user(c: sqlite3.Connection, row: sqlite3.Row, claims: 
              utc_now(), uid),
         )
         fresh = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    except sqlite3.IntegrityError:
+    except INTEGRITY_ERRORS:
         raise HTTPException(status_code=409, detail="Этот Google-аккаунт уже связан с другим пользователем.")
     return token_for_google_user(uid), private_user(fresh)
 
@@ -543,7 +687,7 @@ async def google_auth_finish(body: GoogleFinishIn):
                     now,
                 ),
             )
-        except sqlite3.IntegrityError:
+        except INTEGRITY_ERRORS:
             if c.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
                 raise HTTPException(status_code=409, detail="Этот username уже занят. Выбери другой.")
             raise HTTPException(status_code=409, detail="Этот Google-аккаунт уже зарегистрирован.")
