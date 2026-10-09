@@ -17,79 +17,60 @@ def gradient(size, start, end, direction="vertical"):
     return image
 
 
-# Rounded dark glass tile.
-mask = Image.new("L", (S, S), 0)
-ImageDraw.Draw(mask).rounded_rectangle((18, 18, S - 18, S - 18), radius=112, fill=255)
-base = gradient((S, S), (31, 32, 56, 255), (10, 17, 29, 255))
-base.putalpha(mask)
+def polygon_mask(points):
+    mask = Image.new("L", (S, S), 0)
+    ImageDraw.Draw(mask).polygon(points, fill=255)
+    return mask.filter(ImageFilter.GaussianBlur(1.0))
 
-# Add a soft violet halo behind the flowing ribbon mark.
+
+# Kemtiz's new mark: a precise K-shaped portal with a violet-to-cyan spectral tail.
+tile_mask = Image.new("L", (S, S), 0)
+ImageDraw.Draw(tile_mask).rounded_rectangle((18, 18, S - 18, S - 18), radius=112, fill=255)
+base = gradient((S, S), (31, 35, 58, 255), (8, 13, 25, 255))
+base.putalpha(tile_mask)
+
 halo = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-hd = ImageDraw.Draw(halo)
-hd.ellipse((68, 38, 440, 408), fill=(128, 91, 255, 70))
-halo = halo.filter(ImageFilter.GaussianBlur(54))
+ImageDraw.Draw(halo).ellipse((50, 26, 455, 445), fill=(127, 94, 255, 74))
+halo = halo.filter(ImageFilter.GaussianBlur(60))
 base.alpha_composite(halo)
 
-# Draw the custom Kemtiz ribbon in a high-resolution icon surface.
-ribbon_mask = Image.new("L", (S, S), 0)
-d = ImageDraw.Draw(ribbon_mask)
-# Upper folded ribbon.
-d.polygon(
-    [(115, 230), (123, 169), (156, 119), (224, 89), (351, 58),
-     (327, 107), (287, 147), (240, 175), (183, 199), (151, 231),
-     (141, 294), (115, 320)],
-    fill=255,
-)
-# Curving lower tail.
-d.polygon(
-    [(143, 257), (186, 220), (230, 198), (282, 172), (328, 142),
-     (366, 101), (364, 157), (344, 204), (308, 244), (265, 274),
-     (230, 306), (205, 354), (177, 399), (154, 382), (142, 339)],
-    fill=255,
-)
-ribbon_mask = ribbon_mask.filter(ImageFilter.GaussianBlur(0.7))
-ribbon_top = gradient((S, S), (219, 199, 255, 255), (130, 88, 255, 255), "vertical")
-ribbon_lower = gradient((S, S), (151, 107, 255, 255), (62, 220, 210, 255), "vertical")
+stem = Image.new("L", (S, S), 0)
+ImageDraw.Draw(stem).rounded_rectangle((130, 93, 196, 419), radius=29, fill=255)
+stem = stem.filter(ImageFilter.GaussianBlur(1.0))
 
-# Compose the upper and lower ribbons with their own masks.
-upper_mask = Image.new("L", (S, S), 0)
-ImageDraw.Draw(upper_mask).polygon(
-    [(115, 230), (123, 169), (156, 119), (224, 89), (351, 58),
-     (327, 107), (287, 147), (240, 175), (183, 199), (151, 231),
-     (141, 294), (115, 320)], fill=255
-)
-upper_mask = upper_mask.filter(ImageFilter.GaussianBlur(0.7))
-lower_mask = Image.new("L", (S, S), 0)
-ImageDraw.Draw(lower_mask).polygon(
-    [(143, 257), (186, 220), (230, 198), (282, 172), (328, 142),
-     (366, 101), (364, 157), (344, 204), (308, 244), (265, 274),
-     (230, 306), (205, 354), (177, 399), (154, 382), (142, 339)], fill=255
-)
-lower_mask = lower_mask.filter(ImageFilter.GaussianBlur(0.7))
+upper_points = [
+    (174, 227), (308, 93), (382, 143), (251, 265),
+    (205, 306), (170, 274)
+]
+lower_points = [
+    (216, 241), (267, 193), (407, 329), (346, 389)
+]
+upper_mask = polygon_mask(upper_points)
+lower_mask = polygon_mask(lower_points)
 
-# A subtle blurred shadow adds depth without changing the silhouette.
-shadow = Image.new("RGBA", (S, S), (80, 57, 183, 0))
-shadow.putalpha(ribbon_mask.filter(ImageFilter.GaussianBlur(18)))
-base.alpha_composite(shadow)
+stem_layer = gradient((S, S), (223, 210, 255, 255), (145, 111, 255, 255), "vertical")
+stem_layer.putalpha(stem)
+base.alpha_composite(stem_layer)
 
-upper = ribbon_top
-upper.putalpha(upper_mask)
-base.alpha_composite(upper)
+upper_layer = gradient((S, S), (209, 191, 255, 255), (119, 83, 230, 255), "vertical")
+upper_layer.putalpha(upper_mask)
+base.alpha_composite(upper_layer)
 
-lower = ribbon_lower
-lower.putalpha(lower_mask)
-base.alpha_composite(lower)
+lower_layer = gradient((S, S), (157, 126, 255, 255), (65, 219, 211, 255), "vertical")
+lower_layer.putalpha(lower_mask)
+base.alpha_composite(lower_layer)
 
-# Tiny light-catching line accents.
+# Fine highlights make the silhouette read clearly at small Windows icon sizes.
 accents = Image.new("RGBA", (S, S), (0, 0, 0, 0))
 ad = ImageDraw.Draw(accents)
-ad.line([(154, 182), (203, 148), (263, 127), (319, 90)], fill=(245, 237, 255, 200), width=7)
-ad.line([(181, 292), (221, 253), (269, 223), (316, 181)], fill=(192, 255, 249, 155), width=5)
-ad.ellipse((384, 345, 398, 359), fill=(112, 232, 224, 255))
-ad.ellipse((93, 150, 105, 162), fill=(201, 183, 255, 255))
-accents.putalpha(Image.composite(accents.getchannel("A"), Image.new("L", (S,S), 0), mask))
+ad.line([(151, 135), (168, 121), (177, 121)], fill=(247, 242, 255, 205), width=6)
+ad.line([(285, 224), (352, 290), (376, 313)], fill=(202, 255, 248, 170), width=5)
+ad.polygon([(404, 84), (414, 105), (435, 114), (414, 123), (404, 144), (395, 123), (374, 114), (395, 105)],
+           fill=(160, 248, 239, 245))
+accent_alpha = Image.composite(accents.getchannel("A"), Image.new("L", (S, S), 0), tile_mask)
+accents.putalpha(accent_alpha)
 base.alpha_composite(accents)
 
 base = base.resize((256, 256), Image.Resampling.LANCZOS)
-base.save(OUT, format="ICO", sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+base.save(OUT, format="ICO", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 print(f"Created {OUT}")
