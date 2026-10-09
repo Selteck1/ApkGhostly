@@ -106,3 +106,43 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+  publish-preview-release:
+    name: Publish downloadable preview
+    if: github.ref == 'refs/heads/kemtiz-messenger'
+    needs: [windows-desktop, android-apk]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Prepare release files
+        run: |
+          mv release-assets/app-debug.apk release-assets/Kemtiz-Android-LAN.apk
+          ls -lh release-assets
+
+      - name: Publish preview release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kemtiz-desktop-${{ github.run_number }}
+          name: Kemtiz Desktop preview #${{ github.run_number }}
+          body: |
+            Kemtiz preview build from branch kemtiz-messenger.
+
+            - Kemtiz.exe is the Windows desktop app and runs the server on the PC.
+            - Kemtiz-Android-LAN.apk supports a private-LAN HTTP server address.
+            - Keep both devices on the same trusted Wi-Fi. Do not expose port 8000 to the public internet; LAN HTTP is not encrypted.
+          prerelease: true
+          make_latest: false
+          files: |
+            release-assets/Kemtiz.exe
+            release-assets/README-Desktop.txt
+            release-assets/Kemtiz-Android-LAN.apk
