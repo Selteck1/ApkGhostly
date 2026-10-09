@@ -283,6 +283,7 @@ class KemtizApiTests(unittest.TestCase):
             "SELECT * FROM users WHERE username LIKE ? ESCAPE '\\\\'"
         )
         self.assertIn("username ILIKE %s", query)
+        self.assertIn("ESCAPE E'\\\\'", query)
 
         update, _ = adapter._translate(
             "UPDATE chat_members SET last_read_id=MAX(last_read_id,?) WHERE chat_id=?"
