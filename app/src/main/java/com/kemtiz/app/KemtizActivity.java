@@ -272,6 +272,26 @@ public class KemtizActivity extends Activity {
         webView.loadUrl(serverUrl());
     }
 
+    private boolean isPrivateLanIPv4(String host) {
+        if (host == null) return false;
+        String[] parts = host.split("\\.");
+        if (parts.length != 4) return false;
+        int[] octets = new int[4];
+        try {
+            for (int i = 0; i < 4; i++) {
+                if (parts[i].isEmpty() || parts[i].length() > 3) return false;
+                octets[i] = Integer.parseInt(parts[i]);
+                if (octets[i] < 0 || octets[i] > 255) return false;
+            }
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+        boolean privateRange = octets[0] == 10
+            || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+            || (octets[0] == 192 && octets[1] == 168);
+        return privateRange && octets[3] > 0 && octets[3] < 255;
+    }
+
     private void editServerUrl() {
         android.widget.EditText input = new android.widget.EditText(this);
         input.setSingleLine(true);
@@ -282,7 +302,7 @@ public class KemtizActivity extends Activity {
 
         new AlertDialog.Builder(this)
             .setTitle("Адрес сервера Kemtiz")
-            .setMessage("На этом телефоне используй http://127.0.0.1:8000/. Для удалённого сервера нужен HTTPS.")
+            .setMessage("На этом телефоне используй http://127.0.0.1:8000/. Для устройств в той же доверенной Wi-Fi сети можно указать http://192.168.x.x:8000/. Для доступа из интернета нужен HTTPS.")
             .setView(input)
             .setNegativeButton("Отмена", null)
             .setPositiveButton("Сохранить", (dialog, which) -> {
@@ -296,10 +316,10 @@ public class KemtizActivity extends Activity {
                 Uri uri = Uri.parse(value);
                 String host = uri.getHost();
                 boolean localHttp = "http".equals(uri.getScheme()) &&
-                    ("127.0.0.1".equals(host) || "localhost".equals(host));
+                    ("127.0.0.1".equals(host) || "localhost".equals(host) || isPrivateLanIPv4(host));
                 if (host == null || (!"https".equals(uri.getScheme()) && !localHttp)) {
                     new AlertDialog.Builder(this)
-                        .setMessage("Разрешены HTTPS-адреса или локальный адрес http://127.0.0.1:8000/.")
+                        .setMessage("Разрешены HTTPS-адреса, localhost или частный IPv4-адрес в доверенной локальной сети (10.x.x.x, 172.16–31.x.x, 192.168.x.x). HTTP не шифрует трафик.")
                         .setPositiveButton("ОК", null).show();
                     return;
                 }
