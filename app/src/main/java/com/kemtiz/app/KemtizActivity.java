@@ -39,7 +39,7 @@ import android.widget.TextView;
 
 public class KemtizActivity extends Activity {
     private static final String PREFS = "kemtiz_settings";
-    private static final String LOCAL_URL = "http://127.0.0.1:8000/";
+    private static final String DEFAULT_SERVER_URL = "";
     private static final int BG = Color.rgb(11, 12, 17);
     private static final int PANEL = Color.rgb(24, 25, 36);
     private static final int ACCENT = Color.rgb(132, 98, 220);
@@ -128,19 +128,19 @@ public class KemtizActivity extends Activity {
         errorPanel.addView(title, titleLp);
 
         TextView description = label(
-            "Сервер пока не запущен на этом телефоне.\nЗапусти backend в Termux, затем нажми «Повторить».",
+            "Подключись к общему серверу Kemtiz.\nОдин и тот же HTTPS-адрес нужен на телефоне и компьютере.",
             14, MUTED, Gravity.CENTER);
         LinearLayout.LayoutParams descLp = wrap();
         descLp.topMargin = dp(12);
         errorPanel.addView(description, descLp);
 
-        Button server = button("⚙  Адрес сервера");
+        Button server = button("⚙  Адрес общего сервера");
         LinearLayout.LayoutParams serverLp = match();
         serverLp.topMargin = dp(20);
         errorPanel.addView(server, serverLp);
         server.setOnClickListener(v -> editServerUrl());
 
-        Button help = button("Как запустить сервер");
+        Button help = button("Как настроить сервер");
         LinearLayout.LayoutParams helpLp = match();
         helpLp.topMargin = dp(8);
         errorPanel.addView(help, helpLp);
@@ -341,15 +341,20 @@ public class KemtizActivity extends Activity {
 
     private String serverUrl() {
         String value = getSharedPreferences(PREFS, MODE_PRIVATE)
-            .getString("server_url", LOCAL_URL).trim();
-        if (value.isEmpty()) value = LOCAL_URL;
+            .getString("server_url", DEFAULT_SERVER_URL).trim();
+        if (value.isEmpty()) return "";
         return value.endsWith("/") ? value : value + "/";
     }
 
     private void loadApp() {
+        String address = serverUrl();
+        if (address.isEmpty()) {
+            showServerError();
+            return;
+        }
         errorPanel.setVisibility(View.GONE);
         webView.setVisibility(View.VISIBLE);
-        webView.loadUrl(serverUrl());
+        webView.loadUrl(address);
     }
 
     private boolean isPrivateLanIPv4(String host) {
@@ -382,7 +387,7 @@ public class KemtizActivity extends Activity {
 
         new AlertDialog.Builder(this)
             .setTitle("Адрес сервера Kemtiz")
-            .setMessage("На этом телефоне используй http://127.0.0.1:8000/. Для устройств в той же доверенной Wi-Fi сети можно указать http://192.168.x.x:8000/. Для доступа из интернета нужен HTTPS.")
+            .setMessage("Введи адрес общего сервера Kemtiz, который будет использоваться и на ПК. Для доступа через интернет обязателен HTTPS. HTTP разрешён только для локальной разработки в доверенной сети.")
             .setView(input)
             .setNegativeButton("Отмена", null)
             .setPositiveButton("Сохранить", (dialog, which) -> {
@@ -419,14 +424,13 @@ public class KemtizActivity extends Activity {
 
     private void showHelp() {
         new AlertDialog.Builder(this)
-            .setTitle("Запуск Kemtiz")
+            .setTitle("Общий сервер Kemtiz")
             .setMessage(
-                "1. Открой Termux.\n\n" +
-                "2. Перейди в папку проекта.\n\n" +
-                "3. Активируй окружение и выполни:\n" +
-                "cd kemtiz && uvicorn server:app --host 127.0.0.1 --port 8000\n\n" +
-                "4. Не закрывай Termux, пока тестируешь мессенджер.\n\n" +
-                "Когда сервер запустится, вернись сюда и нажми «Повторить подключение»."
+                "1. Сервер и общая база должны быть развёрнуты отдельно.\n\n" +
+                "2. Инструкция для владельца проекта:\n" +
+                "https://github.com/Selteck1/ApkGhostly/blob/kemtiz-messenger/kemtiz/DEPLOY.md\n\n" +
+                "3. Скопируй выданный HTTPS-адрес сервера в настройках Kemtiz на телефоне и на ПК.\n\n" +
+                "Если сервер ещё не развёрнут, сначала заверши настройку Render и Neon по инструкции."
             )
             .setPositiveButton("Понятно", null)
             .show();
