@@ -2,6 +2,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
 
 OUT = Path(__file__).resolve().parent / "kemtiz.ico"
+OUT_PNG = Path(__file__).resolve().parent / "kemtiz.png"
 S = 512
 
 
@@ -73,4 +74,5 @@ base.alpha_composite(accents)
 
 base = base.resize((256, 256), Image.Resampling.LANCZOS)
 base.save(OUT, format="ICO", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-print(f"Created {OUT}")
+base.save(OUT_PNG, format="PNG")
+print(f"Created {OUT} and {OUT_PNG}")
