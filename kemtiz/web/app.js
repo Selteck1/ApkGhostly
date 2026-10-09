@@ -5,7 +5,8 @@
   const state = {
     token: localStorage.getItem("kemtiz_token") || "",
     me: null,
-    registering: false,
+    authStage: "phone",
+    pendingPhone: "",
     chats: [],
     friends: [],
     incoming: [],
@@ -59,45 +60,66 @@
     return node;
   }
 
-  function setAuthMode(registering) {
-    state.registering = registering;
-    $("loginTab").classList.toggle("active", !registering);
-    $("registerTab").classList.toggle("active", registering);
-    $("displayName").classList.toggle("hidden", !registering);
-    $("displayNameLabel").classList.toggle("hidden", !registering);
-    $("password").autocomplete = registering ? "new-password" : "current-password";
-    $("authTitle").textContent = registering ? "Создай свой аккаунт" : "С возвращением";
-    $("authDescription").textContent = registering
-      ? "Выбери username, чтобы друзья могли тебя найти."
-      : "Войди, чтобы продолжить общение.";
-    $("authSubmit").innerHTML = registering
-      ? 'Создать аккаунт <span>↗</span>'
-      : 'Войти в Kemtiz <span>↗</span>';
+  function setAuthStage(stage) {
+    state.authStage = stage;
+    const verifying = stage === "code";
+    $("codeSection").classList.toggle("hidden", !verifying);
+    $("changePhoneButton").classList.toggle("hidden", !verifying);
+    $("phone").readOnly = verifying;
+    $("authCode").required = verifying;
+    $("authTitle").textContent = verifying ? "Проверь SMS" : "Вход и регистрация";
+    $("authDescription").textContent = verifying
+      ? "Введи шестизначный код из SMS, чтобы открыть Kemtiz."
+      : "Введи номер телефона. Если ты здесь впервые, аккаунт создастся автоматически.";
+    $("authSubmit").innerHTML = verifying
+      ? 'Подтвердить и войти <span>↗</span>'
+      : 'Получить код <span>↗</span>';
     $("authError").textContent = "";
+    if (!verifying) {
+      state.pendingPhone = "";
+      $("authCode").value = "";
+      $("codeHint").textContent = "Код действует 5 минут.";
+      $("phone").focus();
+    } else {
+      $("authCode").focus();
+    }
   }
 
-  $("loginTab").addEventListener("click", () => setAuthMode(false));
-  $("registerTab").addEventListener("click", () => setAuthMode(true));
+  $("changePhoneButton").addEventListener("click", () => setAuthStage("phone"));
 
   $("authForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     $("authError").textContent = "";
     $("authSubmit").disabled = true;
     try {
-      const username = $("username").value.trim();
-      const password = $("password").value;
-      const body = state.registering
-        ? { username, password, display_name: $("displayName").value.trim() || username }
-        : { username, password };
-      const result = await api(state.registering ? "/api/auth/register" : "/api/auth/login", {
-        method: "POST", body
-      });
-      state.token = result.token;
-      localStorage.setItem("kemtiz_token", state.token);
-      state.manualLogout = false;
-      await enterApp(result.user);
+      if (state.authStage === "phone") {
+        const result = await api("/api/auth/request-code", {
+          method: "POST",
+          body: { phone: $("phone").value.trim() }
+        });
+        state.pendingPhone = result.phone;
+        const digits = String(result.phone || "").replace(/\D/g, "");
+        $("codeHint").textContent = "Введи код из SMS на номер, оканчивающийся на " + digits.slice(-4) + ". Код действует 5 минут.";
+        setAuthStage("code");
+      } else {
+        const result = await api("/api/auth/verify-code", {
+          method: "POST",
+          body: {
+            phone: state.pendingPhone || $("phone").value.trim(),
+            code: $("authCode").value.trim()
+          }
+        });
+        state.token = result.token;
+        localStorage.setItem("kemtiz_token", state.token);
+        state.manualLogout = false;
+        state.pendingPhone = "";
+        state.authStage = "phone";
+        $("phone").value = "";
+        $("authCode").value = "";
+        await enterApp(result.user);
+      }
     } catch (error) {
-      $("authError").textContent = error.message || "Не удалось войти.";
+      $("authError").textContent = error.message || "Не удалось подтвердить номер.";
     } finally {
       $("authSubmit").disabled = false;
     }
