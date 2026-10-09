@@ -1,6 +1,6 @@
 # Kemtiz Desktop for Windows
 
-This is a Windows desktop window, not a browser tab. It starts the Kemtiz API on this PC and opens the Kemtiz interface in Microsoft Edge WebView2.
+Kemtiz Desktop is launched from a Windows `.exe`. It starts the Kemtiz API locally and opens a dedicated app-mode window of the installed Microsoft Edge or Google Chrome. The app window has no normal browser address bar, and Google sign-in runs in the real browser rather than an embedded WebView.
 
 ## Download
 
@@ -21,7 +21,7 @@ Open the repository's Actions tab → Build Kemtiz Desktop → the latest succes
 - LAN mode uses plain HTTP, without transport encryption. Use only a network you trust; do not port-forward port 8000 or share these addresses over public Wi-Fi.
 - The desktop database is stored in %APPDATA%\Kemtiz\data.
 - On first run, Windows may ask for firewall permission. Allow only on a private network.
-- Microsoft Edge WebView2 Runtime is required. If Kemtiz reports that it is missing, install the official Evergreen WebView2 Runtime.
+- Microsoft Edge or Google Chrome must be installed. The app uses a separate browser profile under `%APPDATA%\\Kemtiz\\BrowserProfile`; this keeps the application window separate from normal browser windows.
 
 ## Build locally
 
@@ -30,6 +30,6 @@ With Python 3.12 on Windows, from the repository root:
     python -m pip install -r kemtiz/requirements.txt
     python -m pip install -r kemtiz/desktop/requirements.txt
     python kemtiz/desktop/make_icon.py
-    python -m PyInstaller --noconfirm --clean --onefile --windowed --name Kemtiz --icon kemtiz/desktop/kemtiz.ico --paths kemtiz --add-data "kemtiz/server.py;." --add-data "kemtiz/web;web" --collect-all webview --collect-submodules uvicorn kemtiz/desktop/launcher.py
+    python -m PyInstaller --noconfirm --clean --onefile --windowed --name Kemtiz --icon kemtiz/desktop/kemtiz.ico --paths kemtiz --add-data "kemtiz/server.py;." --add-data "kemtiz/web;web" --collect-submodules uvicorn kemtiz/desktop/launcher.py
 
 The output is dist/Kemtiz.exe.
