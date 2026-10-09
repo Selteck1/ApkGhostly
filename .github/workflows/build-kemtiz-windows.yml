@@ -1,0 +1,130 @@
+name: Build Kemtiz Windows client
+
+on:
+  push:
+    branches: ["kemtiz-messenger"]
+    paths:
+      - "kemtiz/desktop/**"
+      - "kemtiz/requirements.txt"
+      - "kemtiz/DEPLOY.md"
+      - "render.yaml"
+      - "app/src/main/java/com/kemtiz/app/KemtizActivity.java"
+      - ".github/workflows/build-kemtiz-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    name: Build Windows EXE and installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            kemtiz/requirements.txt
+            kemtiz/desktop/requirements.txt
+
+      - name: Install build dependencies
+        run: python -m pip install -r kemtiz/requirements.txt -r kemtiz/desktop/requirements.txt
+
+      - name: Generate Kemtiz logo assets
+        run: python kemtiz/desktop/make_icon.py
+
+      - name: Validate Python source
+        run: python -m compileall -q kemtiz/desktop
+
+      - name: Package remote-only Kemtiz.exe
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name Kemtiz
+          --icon kemtiz/desktop/kemtiz.ico
+          --paths kemtiz
+          --add-data "kemtiz/desktop/kemtiz.png;assets"
+          --collect-all PySide6
+          --collect-all shiboken6
+          kemtiz/desktop/launcher.py
+
+      - name: Include instructions
+        run: Copy-Item kemtiz/desktop/README.md dist/README-Desktop.txt
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: powershell
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) { $compiler = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
+          if (!(Test-Path $compiler)) { throw "Inno Setup compiler was not installed." }
+          & $compiler "kemtiz\desktop\installer.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path "dist\Kemtiz-Setup.exe")) { throw "Kemtiz-Setup.exe was not created." }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kemtiz-Windows
+          path: |
+            dist/Kemtiz.exe
+            dist/Kemtiz-Setup.exe
+            dist/README-Desktop.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-windows-release:
+    name: Publish Windows client
+    if: github.ref == 'refs/heads/kemtiz-messenger'
+    needs: [windows-desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: Kemtiz-Windows
+          path: release-assets
+
+      - name: Verify release files
+        run: |
+          test -s release-assets/Kemtiz.exe
+          test -s release-assets/Kemtiz-Setup.exe
+          test -s release-assets/README-Desktop.txt
+
+      - name: Publish Windows release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kemtiz-windows-${{ github.run_number }}
+          target_commitish: kemtiz-messenger
+          name: "Kemtiz Windows preview #${{ github.run_number }}"
+          body: |
+            Kemtiz Windows client, built from branch kemtiz-messenger.
+
+            - Kemtiz-Setup.exe installs the app and offers a desktop shortcut.
+            - Kemtiz.exe is the portable client.
+            - The EXE contains no backend or database. On first launch, enter the public HTTPS URL of the shared Kemtiz server.
+            - Android and Windows must use the same API URL and PostgreSQL database before QR login can work across networks.
+            - Use render.yaml and kemtiz/DEPLOY.md to set up the API and Neon PostgreSQL. Set DATABASE_URL in Render; never put database credentials in the EXE.
+            - This is an early test build and does not provide end-to-end encryption or full account recovery.
+          prerelease: true
+          make_latest: false
+          files: |
+            release-assets/Kemtiz.exe
+            release-assets/Kemtiz-Setup.exe
+            release-assets/README-Desktop.txt
