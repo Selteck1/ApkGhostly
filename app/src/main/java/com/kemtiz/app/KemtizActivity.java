@@ -388,7 +388,7 @@ public class KemtizActivity extends Activity {
 
         new AlertDialog.Builder(this)
             .setTitle("Адрес сервера Kemtiz")
-            .setMessage("Введи адрес общего сервера Kemtiz, который будет использоваться и на ПК. Для доступа через интернет обязателен HTTPS. HTTP разрешён только для локальной разработки в доверенной сети.")
+            .setMessage("Введи HTTPS-адрес общего сервера Kemtiz, который будет использоваться и на ПК. Адрес появится в Render после запуска сервиса kemtiz-api. Вставь один и тот же HTTPS-адрес в телефон и Windows. HTTP разрешён только для локальной разработки в доверенной сети.")
             .setView(input)
             .setNegativeButton("Отмена", null)
             .setPositiveButton("Сохранить", (dialog, which) -> {
