@@ -379,8 +379,11 @@ def health():
     return {"ok":True,"app":"Kemtiz","users":users,"messages":messages}
 
 
+DEFAULT_GOOGLE_CLIENT_ID = "649066614178-fu0q0b09mi7iumi98ke3u435oe193vl8.apps.googleusercontent.com"
+
 def google_client_id() -> str:
-    return os.environ.get("KEMTIZ_GOOGLE_CLIENT_ID", "").strip()
+    # Allow an explicit deployment override, but work out of the box with the public OAuth client ID.
+    return os.environ.get("KEMTIZ_GOOGLE_CLIENT_ID", "").strip() or DEFAULT_GOOGLE_CLIENT_ID
 
 
 @app.get("/api/config")
