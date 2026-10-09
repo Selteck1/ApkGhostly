@@ -184,10 +184,10 @@ def b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def token_for(uid: int) -> str:
+def token_for(uid: int, auth_type: str = "google") -> str:
     now = int(time.time())
     head = b64(json.dumps({"alg":"HS256","typ":"JWT"}, separators=(",",":")).encode())
-    body = b64(json.dumps({"sub":uid,"iat":now,"exp":now+TOKEN_TTL,"auth":"google"}, separators=(",",":")).encode())
+    body = b64(json.dumps({"sub":uid,"iat":now,"exp":now+TOKEN_TTL,"auth":auth_type}, separators=(",",":")).encode())
     msg = (head + "." + body).encode()
     sig = b64(hmac.new(SECRET, msg, hashlib.sha256).digest())
     return head + "." + body + "." + sig
@@ -202,8 +202,8 @@ def user_id_from_token(token: str) -> int:
         payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
         if int(payload["exp"]) < int(time.time()):
             raise ValueError("expired")
-        if payload.get("auth") != "google":
-            raise ValueError("legacy authentication")
+        if payload.get("auth") not in ("google", "password"):
+            raise ValueError("unknown authentication method")
         return int(payload["sub"])
     except Exception:
         raise HTTPException(status_code=401, detail="Сессия истекла. Войди снова.")
@@ -255,6 +255,16 @@ class GoogleFinishIn(BaseModel):
     username: str = Field(min_length=3, max_length=25)
     country: str = Field(default="", max_length=64)
     about: str = Field(default="", max_length=200)
+
+class PasswordRegisterIn(BaseModel):
+    username: str = Field(min_length=3, max_length=24)
+    password: str = Field(min_length=8, max_length=128)
+    display_name: str = Field(default="", max_length=80)
+
+
+class PasswordLoginIn(BaseModel):
+    username: str = Field(min_length=3, max_length=24)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class FriendIn(BaseModel):
@@ -433,6 +443,38 @@ async def verify_google_credential(credential: str) -> dict[str, Any]:
         "picture": str(claims.get("picture") or "")[:2000],
     }
 
+PASSWORD_HASH_ITERATIONS = 260_000
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS)
+    return "pbkdf2_sha256$" + str(PASSWORD_HASH_ITERATIONS) + "$" + b64(salt) + "$" + b64(digest)
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        algorithm, iterations_text, salt_text, digest_text = stored.split("$", 3)
+        iterations = int(iterations_text)
+        if algorithm != "pbkdf2_sha256" or not 100_000 <= iterations <= 1_000_000:
+            return False
+        salt = base64.urlsafe_b64decode(salt_text + "=" * (-len(salt_text) % 4))
+        expected = base64.urlsafe_b64decode(digest_text + "=" * (-len(digest_text) % 4))
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, TypeError):
+        return False
+
+
+def normalized_username(value: str) -> str:
+    username = value.strip().removeprefix("@").lower()
+    if not username.isascii() or not re.fullmatch(r"[a-z0-9_]{3,24}", username) or not username[0].isalnum():
+        raise HTTPException(status_code=422, detail="Логин: 3–24 символа, латиница, цифры и _.")
+    return username
+
+
+_DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
+
 def token_for_google_user(uid: int) -> str:
     return token_for(uid)
 
@@ -461,6 +503,45 @@ def login_existing_google_user(c: sqlite3.Connection, row: sqlite3.Row, claims: 
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="Этот Google-аккаунт уже связан с другим пользователем.")
     return token_for_google_user(uid), private_user(fresh)
+
+
+@app.post("/api/auth/password/register")
+def password_register(body: PasswordRegisterIn):
+    username = normalized_username(body.username)
+    display_name = body.display_name.strip() or username
+    now = utc_now()
+    with db() as c:
+        try:
+            cursor = c.execute(
+                """INSERT INTO users(username,display_name,password_hash,created_at,last_seen_at)
+                   VALUES(?,?,?,?,?)""",
+                (username, display_name, hash_password(body.password), now, now),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="Этот логин уже занят. Выбери другой.")
+        uid = int(cursor.lastrowid)
+        row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    return {"token": token_for(uid, "password"), "user": private_user(row)}
+
+
+@app.post("/api/auth/password/login")
+def password_login(body: PasswordLoginIn):
+    username = body.username.strip().removeprefix("@").lower()
+    if not username.isascii() or not re.fullmatch(r"[a-z0-9_]{3,24}", username) or not username[0].isalnum():
+        verify_password(body.password, _DUMMY_PASSWORD_HASH)
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль.")
+    with db() as c:
+        row = c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        stored = row["password_hash"] if row is not None else _DUMMY_PASSWORD_HASH
+        if not verify_password(body.password, stored):
+            if row is not None and not stored.startswith("pbkdf2_sha256$"):
+                verify_password(body.password, _DUMMY_PASSWORD_HASH)
+            raise HTTPException(status_code=401, detail="Неверный логин или пароль.")
+        uid = int(row["id"])
+        c.execute("UPDATE users SET last_seen_at=? WHERE id=?", (utc_now(), uid))
+        fresh = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    return {"token": token_for(uid, "password"), "user": private_user(fresh)}
+
 
 
 @app.post("/api/auth/google/start")
