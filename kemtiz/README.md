@@ -11,19 +11,18 @@ Kemtiz — alpha-мессенджер для браузера на ПК и мо�
 
 ID-токен проверяется на сервере с помощью официальной библиотеки `google-auth`. Для входа и создания аккаунта сервер принимает только токены, выпущенные Google с нужной audience, действующим сроком и подтверждённой почтой.
 
-## Настроить Google OAuth Client ID
+## Настроить Google OAuth
 
-Один раз создай OAuth Client ID:
+Открой [Google Cloud Console — Clients](https://console.cloud.google.com/auth/clients), создай/выбери проект и закончи настройку Google Auth Platform (название приложения, email поддержки, consent screen). На этапе тестирования добавь свой Google-адрес в список test users.
 
-1. Открой [Google Cloud Console — Credentials](https://console.cloud.google.com/apis/credentials).
-2. Выбери или создай проект и настрой OAuth consent screen. Пока приложение в тестовом режиме, добавь свой Google-адрес в список test users.
-3. Создай OAuth Client ID типа **Web application**.
-4. Для локального теста добавь в **Authorized JavaScript origins** оба origin:
-   - `http://127.0.0.1:8000`
-   - `http://localhost:8000`
-5. Скопируй Client ID вида `123456789-abcdef.apps.googleusercontent.com`. Это публичный идентификатор, а не секретный пароль.
+Нужны OAuth-клиенты для веба и Android:
 
-Когда появится настоящий HTTPS-адрес Kemtiz, добавь и его origin в настройки Google OAuth. Для доступа с других устройств одного `127.0.0.1` недостаточно: нужен доступный HTTPS-адрес и его регистрация в Google Cloud.
+1. **Web application client** — это серверный Client ID, который будет использоваться и веб-кнопкой, и Credential Manager внутри Android APK. Скопируй ID вида `123456789-abcdef.apps.googleusercontent.com`; это публичный идентификатор, не пароль.
+2. В настройках Web client добавь разрешённые JavaScript origins. Для локального теста на компьютере используй `http://localhost:8000`. Для продакшена добавь фактический HTTPS-origin. Не добавляй путь вроде `/login` — нужен только origin.
+3. **Android client** — создай отдельный OAuth client типа Android, package name `com.kemtiz.app`, и SHA-1 сертификата подписи APK. Для APK из раздела Releases/Artifacts вычисли SHA-1 с Android SDK Build Tools командой `apksigner verify --print-certs app-debug.apk`. Возьми строку `Signer #1 certificate SHA-1 digest` без двоеточий и укажи её в Android client. Этот fingerprint зависит от сертификата конкретной сборки, поэтому после пересборки debug APK может потребоваться обновить Android client.
+
+Подробности: [официальная настройка Google Sign-In для веба](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) и [Google Sign-In для Android](https://developer.android.com/identity/sign-in/credential-manager-siwg?hl=en).
+
 
 ## Запуск в Termux
 
