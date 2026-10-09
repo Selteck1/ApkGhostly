@@ -3,7 +3,9 @@ from __future__ import annotations
 import ipaddress
 import logging
 import os
+import shutil
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -11,7 +13,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-APP_TITLE = "Kemtiz"
 PORT = 8000
 DEFAULT_GOOGLE_CLIENT_ID = (
     "649066614178-f3ld6uvr9pupplnsq11k53673c2pft4o.apps.googleusercontent.com"
@@ -98,6 +99,32 @@ def lan_addresses() -> list[tuple[str, str]]:
     return found
 
 
+def find_browser() -> Path | None:
+    """Find the real Edge/Chrome browser so Google sign-in isn't embedded in a WebView."""
+    candidates: list[Path] = []
+    for env_name in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA"):
+        root = os.environ.get(env_name)
+        if not root:
+            continue
+        candidates.extend([
+            Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+            Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe",
+        ])
+
+    for name in ("msedge.exe", "msedge", "chrome.exe", "chrome"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
+
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
 def port_is_available() -> bool:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -144,7 +171,6 @@ def main() -> None:
 
     try:
         import uvicorn
-        import webview
 
         import server  # noqa: PLC0415
     except Exception as exc:
@@ -189,7 +215,7 @@ def main() -> None:
     popup(
         "info",
         "Kemtiz Desktop запущен",
-        "Приложение откроется в отдельном окне.\n\n"
+        "Kemtiz откроется в отдельном окне приложения.\n\n"
         f"На этом ПК:\nhttp://localhost:{PORT}\n\n"
         "Для телефона или другого устройства в той же доверенной Wi-Fi/локальной сети:\n"
         + "\n".join(lan_lines)
@@ -197,33 +223,48 @@ def main() -> None:
         "На телефоне открой Kemtiz → «Адрес сервера» и укажи один из этих адресов.\n"
         "Оба устройства должны быть в одной сети, а Windows Firewall должен разрешить "
         "Kemtiz в частной сети.\n\n"
+        "Google-вход открывается в настоящем браузере Edge/Chrome, не во встроенном WebView.\n"
         "Локальный режим использует HTTP без шифрования. Не используй его в общественных "
         "Wi-Fi и не открывай порт 8000 в интернет.",
     )
 
-    try:
-        window = webview.create_window(
-            "Kemtiz",
-            f"http://localhost:{PORT}",
-            width=1440,
-            height=920,
-            min_size=(960, 640),
-            background_color="#0c0d12",
-        )
-
-        def shutdown() -> None:
-            api_server.should_exit = True
-
-        window.events.closed += shutdown
-        webview.start(gui="edgechromium", debug=False)
-    except Exception as exc:
-        logging.exception("Ошибка графического окна")
+    browser = find_browser()
+    if browser is None:
+        api_server.should_exit = True
+        thread.join(timeout=5)
         popup(
             "error",
-            "Kemtiz — ошибка окна",
-            "Не удалось открыть окно приложения.\n\n"
-            "Установи Microsoft Edge WebView2 Runtime и попробуй снова.\n\n"
-            f"Подробности: {exc}\nЖурнал: {log_path}",
+            "Kemtiz — нужен Microsoft Edge или Google Chrome",
+            "Не удалось найти Microsoft Edge или Google Chrome.\n"
+            "Установи один из этих браузеров и запусти Kemtiz снова.",
+        )
+        return
+
+    profile_dir = appdata / "BrowserProfile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    command = [
+        str(browser),
+        f"--app=http://localhost:{PORT}",
+        f"--user-data-dir={profile_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-background-mode",
+    ]
+    try:
+        logging.info("Launching app window with %s", browser)
+        browser_process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        browser_process.wait()
+    except Exception as exc:
+        logging.exception("Не удалось запустить окно приложения")
+        popup(
+            "error",
+            "Kemtiz — не удалось открыть окно",
+            f"Не удалось запустить Edge/Chrome:\n{exc}\n\nЖурнал: {log_path}",
         )
     finally:
         api_server.should_exit = True
