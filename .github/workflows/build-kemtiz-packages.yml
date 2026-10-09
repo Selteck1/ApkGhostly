@@ -115,7 +115,8 @@ jobs:
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee android-signature.txt
           SHA1="$(awk '/certificate SHA-1 digest:/{print $NF; exit}' android-signature.txt)"
           test -n "$SHA1"
-          SHA1_COLON="$(printf '%s' "$SHA1" | sed 's/../&:/g; s/:$/' | tr '[:lower:]' '[:upper:]')"\nprintf 'SHA-1 for Google Cloud: %s\nRaw SHA-1: %s\n' "$SHA1_COLON" "$SHA1" | tee Android-OAuth-SHA1.txt
+          SHA1_COLON="$(printf '%s' "$SHA1" | sed 's/../&:/g; s/:$/' | tr '[:lower:]' '[:upper:]')"
+printf 'SHA-1 for Google Cloud: %s\nRaw SHA-1: %s\n' "$SHA1_COLON" "$SHA1" | tee Android-OAuth-SHA1.txt
           {
             echo "### Android OAuth fingerprint"
             echo
