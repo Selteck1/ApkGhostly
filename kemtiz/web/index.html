@@ -23,24 +23,22 @@
       </div>
     </div>
     <div class="auth-card">
-      <div class="eyebrow">ЛИЧНОЕ ПРОСТРАНСТВО</div>
-      <h1 id="authTitle">С возвращением</h1>
-      <p id="authDescription" class="muted">Войди, чтобы продолжить общение.</p>
-      <div class="auth-tabs">
-        <button id="loginTab" class="tab active" type="button">Войти</button>
-        <button id="registerTab" class="tab" type="button">Создать аккаунт</button>
-      </div>
-      <form id="authForm">
-        <label id="displayNameLabel" class="field-label hidden" for="displayName">Как тебя называть</label>
-        <input id="displayName" class="text-field hidden" name="displayName" maxlength="32" autocomplete="nickname" placeholder="Отображаемое имя">
-        <label class="field-label" for="username">Имя пользователя</label>
-        <input id="username" class="text-field" name="username" required minlength="3" maxlength="24" autocomplete="username" autocapitalize="none" placeholder="например, kemtiz_user">
-        <label class="field-label" for="password">Пароль</label>
-        <input id="password" class="text-field" name="password" required minlength="8" maxlength="128" type="password" autocomplete="current-password" placeholder="Не менее 8 символов">
-        <button id="authSubmit" class="button primary full-width" type="submit">Войти в Kemtiz <span>↗</span></button>
+      <div class="eyebrow">ВХОД ПО ТЕЛЕФОНУ</div>
+      <h1 id="authTitle">Вход и регистрация</h1>
+      <p id="authDescription" class="muted">Введи номер телефона. Если ты здесь впервые, аккаунт создастся автоматически.</p>
+      <form id="authForm" class="phone-auth-form">
+        <label class="field-label" for="phone">Номер телефона</label>
+        <input id="phone" class="text-field" name="phone" type="tel" inputmode="tel" required maxlength="32" autocomplete="tel" placeholder="+7 900 123-45-67" aria-describedby="authDescription">
+        <div id="codeSection" class="hidden">
+          <label class="field-label" for="authCode">Код из SMS</label>
+          <input id="authCode" class="text-field code-field" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" aria-label="Шестизначный код из SMS">
+          <p id="codeHint" class="muted code-hint">Код действует 5 минут.</p>
+        </div>
+        <button id="authSubmit" class="button primary full-width" type="submit">Получить код <span>↗</span></button>
+        <button id="changePhoneButton" class="auth-change-button hidden" type="button">← Изменить номер</button>
         <div id="authError" class="feedback" role="status" aria-live="polite"></div>
       </form>
-      <div class="auth-note"><span class="status-dot"></span> Первая версия · Android и ПК</div>
+      <div class="auth-note"><span class="status-dot"></span> Вход без пароля · подтверждение по SMS</div>
     </div>
     <div class="footer-note">Kemtiz · ранняя тестовая версия</div>
   </section>
