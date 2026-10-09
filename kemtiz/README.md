@@ -1,6 +1,6 @@
 # Kemtiz API
 
-FastAPI backend for the Android-only Kemtiz Messenger.
+FastAPI backend for the native Android Kemtiz Messenger.
 
 ## Run locally
 
@@ -8,20 +8,19 @@ FastAPI backend for the Android-only Kemtiz Messenger.
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export KEMTIZ_GOOGLE_CLIENT_ID="your-google-web-client-id"
 export KEMTIZ_SECRET="a-long-random-secret"
 uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
-The root `/` returns JSON service information, `/health` checks service health, `/api/config` exposes the public Google client ID, and `/ws` serves realtime events. No browser/PWA UI is served by this backend.
+The root `/` returns JSON service information, `/health` checks service health, `/api/config` exposes the public Google OAuth Client ID, and `/ws` serves realtime events. The Android application uses native Android views and does not load an HTML client.
+
+The Google OAuth Client ID used by the native app is included as a public identifier in the Android client and as a fallback in `server.py`. An environment variable `KEMTIZ_GOOGLE_CLIENT_ID` can override the fallback. The backend uses HTTPS/WSS.
 
 ## Render
 
 Base URL: `https://kemtiz-api.onrender.com`.
 
-Configure `KEMTIZ_GOOGLE_CLIENT_ID` and a stable `KEMTIZ_SECRET` as environment variables. SQLite defaults to `data/kemtiz.sqlite3` inside this directory; ensure that directory is persistent or set `KEMTIZ_DB_PATH` / `KEMTIZ_DATA_DIR` accordingly. An ephemeral filesystem can lose accounts and chats on restart/redeploy.
-
-CORS allows only `https://appassets.androidplatform.net`, used by Android WebViewAssetLoader. Remote API and realtime WebSocket use HTTPS/WSS.
+Set a stable `KEMTIZ_SECRET` in Render for persistent sessions. SQLite defaults to `data/kemtiz.sqlite3` in this directory; ensure that directory is persistent or set `KEMTIZ_DB_PATH` / `KEMTIZ_DATA_DIR` accordingly. An ephemeral filesystem can lose accounts and chats after restart/redeploy.
 
 ## Tests
 
