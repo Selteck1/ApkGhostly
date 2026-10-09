@@ -11,6 +11,7 @@ on:
       - "kemtiz/server.py"
       - "kemtiz/requirements.txt"
       - "kemtiz/web/**"
+      - "app/build.gradle"
       - "app/src/main/java/com/kemtiz/app/KemtizActivity.java"
       - "app/src/main/res/xml/network_security_config.xml"
       - "app/src/main/res/drawable/ic_kemtiz_foreground.xml"
@@ -64,8 +65,13 @@ jobs:
           base64 --decode assets/ghostly_intro.mp4.b64 > app/src/main/res/raw/ghostly_intro.mp4
           test -s app/src/main/res/raw/ghostly_intro.mp4
 
-      - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+      - name: Verify stable signing key and build debug APK
+        shell: bash
+        run: |
+          KEYSTORE="$HOME/.android/debug.keystore"
+          test -s "$KEYSTORE"
+          keytool -list -v -storetype JKS -keystore "$KEYSTORE" -storepass android -alias androiddebugkey | grep -E "SHA1:|SHA-1:"
+          KEMTIZ_STABLE_DEBUG_KEYSTORE="$KEYSTORE" gradle --no-daemon assembleDebug
 
       - name: Print Android OAuth SHA-1 fingerprint
         shell: bash
