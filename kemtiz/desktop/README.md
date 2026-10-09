@@ -23,7 +23,7 @@ Open the repository's **Actions** tab â†’ **Build Kemtiz Desktop and Android** â
 
 ## Android Google chooser fix
 
-The Android app has a fallback Credential Manager sign-in request for new/unapproved Google accounts. If the chooser still fails, open the latest preview release and read Android-OAuth-SHA1.txt. In Google Cloud Console, open the **Android OAuth client** with package name com.kemtiz.app and set that exact SHA-1 fingerprint. The build workflow caches its debug signing key so the SHA-1 stays stable across future builds. Install the matching Kemtiz-Android-LAN.apk from that release.
+The Android app has a fallback Credential Manager sign-in request for new/unapproved Google accounts. If the chooser still fails, open the latest preview release and read Android-OAuth-SHA1.txt. In Google Cloud Console, open the **Android OAuth client** with package name com.kemtiz.app and set that exact SHA-1 fingerprint. GitHub Actions publishes the SHA-1 fingerprint for the exact APK in each release. After installing a newly built APK, use the fingerprint shipped with that same release; a new debug build can have a different SHA-1. Install the matching Kemtiz-Android-LAN.apk from that release.
 
 ## Data and privacy
 
