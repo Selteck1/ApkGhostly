@@ -15,4 +15,4 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: KEMTIZ_GOOGLE_CLIENT_ID
-        sync: false
+        value: 649066614178-f3ld6uvr9pupplnsq11k53673c2pft4o.apps.googleusercontent.com
