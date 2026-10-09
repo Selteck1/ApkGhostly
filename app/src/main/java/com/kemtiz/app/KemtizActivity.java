@@ -34,6 +34,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -114,9 +115,9 @@ public class KemtizActivity extends Activity {
         errorPanel.setPadding(dp(28), dp(28), dp(28), dp(28));
         errorPanel.setBackgroundColor(BG);
 
-        TextView mark = label("K", 48, Color.WHITE, Gravity.CENTER);
-        mark.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        mark.setBackground(round(ACCENT, 24));
+        ImageView mark = new ImageView(this);
+        mark.setImageResource(R.mipmap.ic_launcher);
+        mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams markLp = new LinearLayout.LayoutParams(dp(92), dp(92));
         markLp.gravity = Gravity.CENTER;
         errorPanel.addView(mark, markLp);
