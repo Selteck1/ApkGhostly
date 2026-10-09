@@ -1,35 +1,71 @@
-# Kemtiz
+# Kemtiz Messenger
 
-Тестовый мессенджер Kemtiz. Авторизация выполняется по номеру телефона через одноразовый SMS-код.
+Kemtiz — alpha-мессенджер для браузера на ПК и мобильных устройств, с Android-оболочкой.
 
-## Как работает вход
+## Авторизация через Google
 
-1. Пользователь вводит номер телефона с кодом страны.
-2. Нажимает «Получить код».
-3. Вводит шестизначный код из SMS.
-4. Если номер новый, аккаунт создаётся автоматически; если номер уже зарегистрирован, пользователь входит в существующий аккаунт.
+На экране входа используется официальный Google Identity Services. Пользователь выбирает аккаунт Google в стандартном окне, а Kemtiz получает подтверждённые Google имя, email и аватар. Пароль не запрашивается и не сохраняется. Для первого входа пользователь задаёт только:
+- уникальный `@username` (обязателен);
+- страну (необязательно);
+- короткое описание профиля (необязательно).
 
-Код действует 5 минут. Есть лимит попыток подтверждения, повторная отправка не чаще раза в минуту и не более пяти запросов за час на один номер. Сам код в базе не хранится — сохраняется только его HMAC-хеш.
+ID-токен проверяется на сервере с помощью официальной библиотеки `google-auth`. Для входа и создания аккаунта сервер принимает только токены, выпущенные Google с нужной audience, действующим сроком и подтверждённой почтой.
 
-## Подключение SMS.RU
+## Настроить Google OAuth Client ID
 
-Реальная отправка SMS требует аккаунт SMS.RU и API ID из личного кабинета. Документация: https://sms.ru/docs/api/api_group_sms/send
+Один раз создай OAuth Client ID:
 
-Ключ не добавляй в GitHub и не отправляй в переписке. Перед запуском установи переменную окружения:
+1. Открой [Google Cloud Console — Credentials](https://console.cloud.google.com/apis/credentials).
+2. Выбери или создай проект и настрой OAuth consent screen. Пока приложение в тестовом режиме, добавь свой Google-адрес в список test users.
+3. Создай OAuth Client ID типа **Web application**.
+4. Для локального теста добавь в **Authorized JavaScript origins** оба origin:
+   - `http://127.0.0.1:8000`
+   - `http://localhost:8000`
+5. Скопируй Client ID вида `123456789-abcdef.apps.googleusercontent.com`. Это публичный идентификатор, а не секретный пароль.
+
+Когда появится настоящий HTTPS-адрес Kemtiz, добавь и его origin в настройки Google OAuth. Для доступа с других устройств одного `127.0.0.1` недостаточно: нужен доступный HTTPS-адрес и его регистрация в Google Cloud.
+
+## Запуск в Termux
+
+В Termux сначала останови старый процесс сервера сочетанием `CTRL+C`, затем выполни:
 
 ```bash
-export SMSRU_API_ID='ТВОЙ_API_ID'
-```
+cd "$HOME/KemtizProject" || exit 1
+git pull --ff-only origin kemtiz-messenger || exit 1
+cd "$HOME/KemtizProject/kemtiz" || exit 1
+source .venv/bin/activate || exit 1
+python -m pip install --upgrade pip
+pip install -r requirements.txt || exit 1
+mkdir -p "$HOME/.config/kemtiz"
+touch "$HOME/.config/kemtiz/env.sh"
+chmod 600 "$HOME/.config/kemtiz/env.sh"
 
-Затем запусти сервер из каталога `kemtiz`:
+read -r -p "Вставь Google OAuth Client ID: " GOOGLE_CLIENT_ID
+if [ -z "$GOOGLE_CLIENT_ID" ]; then
+  echo "Client ID не введён."
+  exit 1
+fi
 
-```bash
-source .venv/bin/activate
+grep -v '^export KEMTIZ_GOOGLE_CLIENT_ID=' "$HOME/.config/kemtiz/env.sh" > "$HOME/.config/kemtiz/env.tmp"
+printf 'export KEMTIZ_GOOGLE_CLIENT_ID=%q\n' "$GOOGLE_CLIENT_ID" >> "$HOME/.config/kemtiz/env.tmp"
+mv "$HOME/.config/kemtiz/env.tmp" "$HOME/.config/kemtiz/env.sh"
+chmod 600 "$HOME/.config/kemtiz/env.sh"
+source "$HOME/.config/kemtiz/env.sh"
+
 python -m uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
-Если `SMSRU_API_ID` не задан, экран входа покажет понятную ошибку вместо имитации отправленной SMS.
+Открой в браузере на том же телефоне: `http://127.0.0.1:8000`. Для ПК нужен сервер, доступный с ПК, либо настроенный HTTPS-туннель/домен с тем же origin, добавленным в Google Cloud.
 
-## Важно перед открытием сервера в интернете
+## Android
 
-Сейчас сервер рассчитан на локальный запуск. До публичного доступа нужны HTTPS, CAPTCHA на запрос SMS, дополнительные лимиты по IP и проверка конфигурации прокси. SMS-провайдер также может взимать плату за отправленные сообщения.
+Android APK получает отдельную фирменную adaptive launcher icon Kemtiz. Google Sign-In в браузерной версии использует официальный веб-компонент Google Identity Services. Google запрещает OAuth-поток в управляемом встроенном браузере, поэтому для надёжного входа в Android WebView следует использовать системный Credential Manager; это отдельная интеграция APK, не подмена браузерной кнопки.
+
+## Текущее состояние
+
+- Вход/регистрация Google и завершение профиля.
+- Поиск людей по username, заявки в друзья, личные чаты и группы.
+- История и отправка текстовых сообщений, read-маркеры, онлайн-статус и typing.
+- Кастомная SVG-иконка, Android adaptive icon и адаптивная desktop-first раскладка.
+
+Это альфа-версия: перед публичным запуском дополнительно настрой HTTPS, конфиденциальность, abuse/rate limits, резервное копирование и правила сервиса.
