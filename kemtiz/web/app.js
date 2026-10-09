@@ -5,8 +5,9 @@
   const state = {
     token: localStorage.getItem("kemtiz_token") || "",
     me: null,
-    authStage: "phone",
-    pendingPhone: "",
+    googleClientId: "",
+    googleCredential: "",
+    googleProfile: null,
     chats: [],
     friends: [],
     incoming: [],
@@ -60,70 +61,172 @@
     return node;
   }
 
-  function setAuthStage(stage) {
-    state.authStage = stage;
-    const verifying = stage === "code";
-    $("codeSection").classList.toggle("hidden", !verifying);
-    $("changePhoneButton").classList.toggle("hidden", !verifying);
-    $("phone").readOnly = verifying;
-    $("authCode").required = verifying;
-    $("authTitle").textContent = verifying ? "Проверь SMS" : "Вход и регистрация";
-    $("authDescription").textContent = verifying
-      ? "Введи шестизначный код из SMS, чтобы открыть Kemtiz."
-      : "Введи номер телефона. Если ты здесь впервые, аккаунт создастся автоматически.";
-    $("authSubmit").innerHTML = verifying
-      ? 'Подтвердить и войти <span>↗</span>'
-      : 'Получить код <span>↗</span>';
+  function setProfileAvatar(element, label, url) {
+    element.replaceChildren();
+    if (url && /^https:\/\//i.test(url) && /(^|\.)googleusercontent\.com$/i.test(new URL(url).hostname)) {
+      const image = document.createElement("img");
+      image.src = url;
+      image.alt = "";
+      image.referrerPolicy = "no-referrer";
+      element.append(image);
+      return;
+    }
+    element.textContent = (label || "?").trim().charAt(0).toUpperCase();
+  }
+
+  function showGoogleView() {
+    $("googleLoginView").classList.remove("hidden");
+    $("profileForm").classList.add("hidden");
+    $("authTitle").textContent = "Добро пожаловать";
+    $("authDescription").textContent = "Продолжи с Google — быстро, удобно и без отдельного пароля.";
     $("authError").textContent = "";
-    if (!verifying) {
-      state.pendingPhone = "";
-      $("authCode").value = "";
-      $("codeHint").textContent = "Код действует 5 минут.";
-      $("phone").focus();
-    } else {
-      $("authCode").focus();
+    $("profileError").textContent = "";
+    state.googleCredential = "";
+    state.googleProfile = null;
+  }
+
+  function suggestedUsername(email) {
+    const local = (email.split("@")[0] || "kemtiz_user")
+      .toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^[^a-z0-9]+/, "").slice(0, 15);
+    const base = local || "kemtiz_user";
+    const suffix = Math.random().toString(36).slice(2, 6);
+    return (base + "_" + suffix).slice(0, 24);
+  }
+
+  function showProfileForm(profile, credential) {
+    state.googleCredential = credential;
+    state.googleProfile = profile;
+    $("googleLoginView").classList.add("hidden");
+    $("profileForm").classList.remove("hidden");
+    $("googleDisplayName").textContent = profile.name || "Google аккаунт";
+    $("googleProfileEmail").textContent = profile.email || "";
+    $("profileUsername").value = suggestedUsername(profile.email || "");
+    $("profileCountry").value = "";
+    $("profileAbout").value = "";
+    setProfileAvatar($("googleAvatar"), profile.name || "G", profile.picture);
+    $("profileError").textContent = "";
+    $("profileUsername").focus();
+  }
+
+  async function finishGoogleLogin(result) {
+    state.token = result.token;
+    localStorage.setItem("kemtiz_token", state.token);
+    state.manualLogout = false;
+    state.googleCredential = "";
+    state.googleProfile = null;
+    await enterApp(result.user);
+  }
+
+  async function handleGoogleCredential(credential) {
+    $("authError").textContent = "";
+    try {
+      const result = await api("/api/auth/google/start", {
+        method: "POST",
+        body: { credential }
+      });
+      if (result.needs_profile) {
+        showProfileForm(result.profile || {}, credential);
+      } else {
+        await finishGoogleLogin(result);
+      }
+    } catch (error) {
+      $("authError").textContent = error.message || "Не удалось войти через Google.";
     }
   }
 
-  $("changePhoneButton").addEventListener("click", () => setAuthStage("phone"));
-
-  $("authForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    $("authError").textContent = "";
-    $("authSubmit").disabled = true;
-    try {
-      if (state.authStage === "phone") {
-        const result = await api("/api/auth/request-code", {
-          method: "POST",
-          body: { phone: $("phone").value.trim() }
-        });
-        state.pendingPhone = result.phone;
-        const digits = String(result.phone || "").replace(/\D/g, "");
-        $("codeHint").textContent = "Введи код из SMS на номер, оканчивающийся на " + digits.slice(-4) + ". Код действует 5 минут.";
-        setAuthStage("code");
-      } else {
-        const result = await api("/api/auth/verify-code", {
-          method: "POST",
-          body: {
-            phone: state.pendingPhone || $("phone").value.trim(),
-            code: $("authCode").value.trim()
-          }
-        });
-        state.token = result.token;
-        localStorage.setItem("kemtiz_token", state.token);
-        state.manualLogout = false;
-        state.pendingPhone = "";
-        state.authStage = "phone";
-        $("phone").value = "";
-        $("authCode").value = "";
-        await enterApp(result.user);
+  function initializeGoogleButton() {
+    let attempts = 0;
+    const tryRender = () => {
+      if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+        attempts += 1;
+        if (attempts < 60) {
+          window.setTimeout(tryRender, 100);
+        } else {
+          $("authError").textContent = "Не удалось загрузить Google Sign-In. Проверь подключение к интернету.";
+        }
+        return;
       }
-    } catch (error) {
-      $("authError").textContent = error.message || "Не удалось подтвердить номер.";
-    } finally {
-      $("authSubmit").disabled = false;
+      if (!state.googleClientId) {
+        $("authError").textContent = "Google-вход ещё не настроен на сервере. Сначала добавь KEMTIZ_GOOGLE_CLIENT_ID.";
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: state.googleClientId,
+        callback: (response) => {
+          if (!response || !response.credential) {
+            $("authError").textContent = "Google не вернул подтверждение аккаунта. Попробуй ещё раз.";
+            return;
+          }
+          handleGoogleCredential(response.credential);
+        },
+        auto_select: false,
+        cancel_on_tap_outside: true,
+        ux_mode: "popup"
+      });
+      const container = $("googleButton");
+      container.replaceChildren();
+      window.google.accounts.id.renderButton(container, {
+        type: "standard",
+        theme: "filled_black",
+        size: "large",
+        text: "continue_with",
+        shape: "rectangular",
+        logo_alignment: "left",
+        width: Math.min(360, Math.max(240, container.clientWidth || 360)),
+        locale: "ru"
+      });
+      $("authError").textContent = "";
+    };
+    tryRender();
+  }
+
+  $("googleSetupButton").addEventListener("click", () => {
+    if (!state.googleClientId) {
+      $("authError").textContent = "Для входа настрой KEMTIZ_GOOGLE_CLIENT_ID в конфигурации сервера. Google не позволяет вход без OAuth Client ID.";
+    } else {
+      $("authError").textContent = "Google Sign-In загружается. Подожди пару секунд и попробуй снова.";
     }
   });
+
+  $("profileForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!state.googleCredential) {
+      $("profileError").textContent = "Подтверждение Google истекло. Вернись назад и выбери аккаунт ещё раз.";
+      return;
+    }
+    $("profileError").textContent = "";
+    $("finishProfileButton").disabled = true;
+    try {
+      const result = await api("/api/auth/google/finish", {
+        method: "POST",
+        body: {
+          credential: state.googleCredential,
+          username: $("profileUsername").value.trim(),
+          country: $("profileCountry").value,
+          about: $("profileAbout").value.trim()
+        }
+      });
+      await finishGoogleLogin(result);
+    } catch (error) {
+      $("profileError").textContent = error.message || "Не удалось создать аккаунт.";
+    } finally {
+      $("finishProfileButton").disabled = false;
+    }
+  });
+
+  $("cancelProfileButton").addEventListener("click", () => showGoogleView());
+
+  async function loadGoogleConfiguration() {
+    try {
+      const config = await api("/api/config");
+      state.googleClientId = String(config.google_client_id || "").trim();
+      initializeGoogleButton();
+    } catch (error) {
+      $("authError").textContent = error.message || "Не удалось загрузить настройки входа.";
+    }
+  }
+
+  loadGoogleConfiguration();
 
   async function enterApp(user) {
     state.me = user || await api("/api/me");
@@ -131,7 +234,7 @@
     $("appView").classList.remove("hidden");
     $("meName").textContent = state.me.display_name;
     $("meUsername").textContent = "@" + state.me.username;
-    $("avatarMe").textContent = state.me.display_name.charAt(0).toUpperCase();
+    setProfileAvatar($("avatarMe"), state.me.display_name, state.me.avatar_url);
     await refreshAll();
     connectSocket();
   }
@@ -149,9 +252,7 @@
     localStorage.removeItem("kemtiz_token");
     $("appView").classList.add("hidden");
     $("authView").classList.remove("hidden");
-    $("phone").value = "";
-    $("authCode").value = "";
-    setAuthStage("phone");
+    showGoogleView();
     document.body.classList.remove("chat-open");
     if (showMessage) showToast("Ты вышел из аккаунта.");
   }
