@@ -34,6 +34,8 @@ cd "$HOME/KemtizProject" || exit 1
 git pull --ff-only origin kemtiz-messenger || exit 1
 cd "$HOME/KemtizProject/kemtiz" || exit 1
 source .venv/bin/activate || exit 1
+pkg install -y rust binutils
+export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk)"
 python -m pip install --upgrade pip
 pip install -r requirements.txt || exit 1
 mkdir -p "$HOME/.config/kemtiz"
@@ -59,7 +61,7 @@ python -m uvicorn server:app --host 127.0.0.1 --port 8000
 
 ## Android
 
-Android APK получает отдельную фирменную adaptive launcher icon Kemtiz. Google Sign-In в браузерной версии использует официальный веб-компонент Google Identity Services. Google запрещает OAuth-поток в управляемом встроенном браузере, поэтому для надёжного входа в Android WebView следует использовать системный Credential Manager; это отдельная интеграция APK, не подмена браузерной кнопки.
+Android APK получает отдельную фирменную adaptive launcher icon Kemtiz. При нажатии на кнопку Google в APK открывается системный Credential Manager, который показывает аккаунты устройства и возвращает ID-токен в тот же серверный поток. В обычном браузере используется официальный веб-компонент Google Identity Services. Обе версии используют один и тот же Web OAuth Client ID в качестве server client ID.
 
 ## Текущее состояние
 
