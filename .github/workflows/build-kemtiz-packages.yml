@@ -55,7 +55,10 @@ jobs:
           --paths kemtiz
           --add-data "kemtiz/server.py;."
           --add-data "kemtiz/web;web"
+          --collect-all PySide6
+          --collect-all shiboken6
           --collect-submodules uvicorn
+          --hidden-import server
           kemtiz/desktop/launcher.py
 
       - name: Include desktop instructions
@@ -84,6 +87,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Reuse stable debug signing key for Google OAuth
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: kemtiz-google-debug-keystore-v1
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -98,11 +107,30 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
-      - name: Upload Android APK
+      - name: Print Android OAuth SHA-1 fingerprint
+        shell: bash
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee android-signature.txt
+          SHA1="$(awk '/Signer #1 certificate SHA-1 digest:/{print $NF; exit}' android-signature.txt)"
+          test -n "$SHA1"
+          printf 'Android OAuth SHA-1: %s\n' "$SHA1" | tee Android-OAuth-SHA1.txt
+          {
+            echo "### Android OAuth fingerprint"
+            echo
+            echo "\`$SHA1\`"
+            echo
+            echo "Google Cloud → Android OAuth client → SHA-1 certificate fingerprint."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Android APK and OAuth fingerprint
         uses: actions/upload-artifact@v4
         with:
           name: Kemtiz-Android-LAN
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            Android-OAuth-SHA1.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -145,3 +173,4 @@ jobs:
             release-assets/Kemtiz.exe
             release-assets/README-Desktop.txt
             release-assets/Kemtiz-Android-LAN.apk
+            release-assets/Android-OAuth-SHA1.txt
