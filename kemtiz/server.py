@@ -394,7 +394,7 @@ async def send_sms_code(phone: str, code: str) -> None:
     if payload.get("status") != "OK" or result.get("status") != "OK":
         provider_message = result.get("status_text") or payload.get("status_text")
         provider_code = result.get("status_code") or payload.get("status_code")
-        detail = provider_message or f"код {provider_code}" if provider_code else "провайдер отклонил отправку"
+        detail = provider_message or (f"код {provider_code}" if provider_code else "провайдер отклонил отправку")
         raise HTTPException(status_code=502, detail=f"SMS-сервис не отправил сообщение: {detail}.")
 
 
