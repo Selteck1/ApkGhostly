@@ -2,6 +2,15 @@
 
 FastAPI backend for the native Android Kemtiz Messenger.
 
+## Authentication
+
+The native Android client supports username/password registration and login:
+
+- `POST /api/auth/password/register`
+- `POST /api/auth/password/login`
+
+Usernames are 3–24 characters (ASCII letters, digits and underscore; the first character must be a letter or digit). Passwords must be 8–128 characters. Passwords are stored as salted PBKDF2-HMAC-SHA256 hashes; the API never returns password hashes.
+
 ## Run locally
 
 ```sh
@@ -12,15 +21,13 @@ export KEMTIZ_SECRET="a-long-random-secret"
 uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
-The root `/` returns JSON service information, `/health` checks service health, `/api/config` exposes the public Google OAuth Client ID, and `/ws` serves realtime events. The Android application uses native Android views and does not load an HTML client.
-
-The Google OAuth Client ID used by the native app is included as a public identifier in the Android client and as a fallback in `server.py`. An environment variable `KEMTIZ_GOOGLE_CLIENT_ID` can override the fallback. The backend uses HTTPS/WSS.
+The root `/` returns JSON service information, `/health` checks service health, and `/ws` serves realtime events. The Android app uses native Android views; the client has no embedded HTML interface. Older Google-auth endpoints remain in the backend for compatibility, but the current app presents username/password authentication.
 
 ## Render
 
 Base URL: `https://kemtiz-api.onrender.com`.
 
-Set a stable `KEMTIZ_SECRET` in Render for persistent sessions. SQLite defaults to `data/kemtiz.sqlite3` in this directory; ensure that directory is persistent or set `KEMTIZ_DB_PATH` / `KEMTIZ_DATA_DIR` accordingly. An ephemeral filesystem can lose accounts and chats after restart/redeploy.
+Set a stable `KEMTIZ_SECRET` in Render for persistent sessions. SQLite defaults to `data/kemtiz.sqlite3` in this directory; ensure that directory is persistent or set `KEMTIZ_DB_PATH` / `KEMTIZ_DATA_DIR` accordingly. An ephemeral filesystem can lose accounts and chats after restart/redeploy. Make sure Render deploys this repository's `kemtiz` directory after updating the source.
 
 ## Tests
 
