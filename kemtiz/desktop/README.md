@@ -1,27 +1,37 @@
 # Kemtiz Desktop for Windows
 
-Kemtiz Desktop is launched from a Windows `.exe`. It starts the Kemtiz API locally and opens a dedicated app-mode window of the installed Microsoft Edge or Google Chrome. The app window has no normal browser address bar, and Google sign-in runs in the real browser rather than an embedded WebView.
+Kemtiz.exe is a native Qt desktop application, not a website inside a browser. It displays its own Kemtiz window and connects to the local Kemtiz backend started by the executable.
 
-## Download
+## Important note about Google sign-in
 
-Open the repository's Actions tab → Build Kemtiz Desktop → the latest successful run → download the Kemtiz-Desktop-Windows artifact. It contains Kemtiz.exe.
+The Kemtiz interface itself does not run in a browser. Google requires installed desktop apps to use the system browser for the account authorization step; this is the supported OAuth flow and avoids the embedded-browser restriction.
 
-## Run
+### One-time OAuth setup
 
-1. Start Kemtiz.exe.
-2. If Windows Firewall asks, allow access on Private networks only if you plan to connect a phone over your own Wi-Fi.
-3. The app opens in its own window and shows the addresses available on this PC.
-4. Sign in with Google. The Web OAuth client must include http://localhost:8000 in Authorized JavaScript origins.
-5. To use the same Kemtiz data from Android on the same Wi-Fi, open Kemtiz on Android → Адрес сервера → enter the private-LAN address shown by the desktop app, for example http://192.168.1.20:8000/.
+1. Open [Google Cloud Console — Clients](https://console.cloud.google.com/auth/clients).
+2. In the same Google Cloud project used by Kemtiz, create a new OAuth client with type **Desktop app**.
+3. Copy the new Desktop Client ID (ending with .apps.googleusercontent.com).
+4. Start Kemtiz.exe, click **Настроить Google-вход**, and paste that Desktop Client ID. It is saved in %APPDATA%\Kemtiz\config.json.
+5. Keep the existing **Web application** OAuth client and its Client ID. Do not replace it: the desktop and web clients have different purposes.
+6. If the consent screen is in testing mode, add your Google account to its test users list.
 
-## Important limits
+The executable uses OAuth authorization code + PKCE and a loopback callback on 127.0.0.1. It does not embed a client secret.
 
-- The Windows PC is the host. The desktop app must remain running while the phone connects.
-- The PC and phone must be on the same trusted Wi-Fi/local network. This does not make Kemtiz available over the public internet.
-- LAN mode uses plain HTTP, without transport encryption. Use only a network you trust; do not port-forward port 8000 or share these addresses over public Wi-Fi.
-- The desktop database is stored in %APPDATA%\Kemtiz\data.
-- On first run, Windows may ask for firewall permission. Allow only on a private network.
-- Microsoft Edge or Google Chrome must be installed. The app uses a separate browser profile under `%APPDATA%\Kemtiz\BrowserProfile`; this keeps the application window separate from normal browser windows.
+## Build and download
+
+Open the repository's **Actions** tab → **Build Kemtiz Desktop and Android** → the latest successful run. The preview release is also published at [GitHub Releases](https://github.com/Selteck1/ApkGhostly/releases). The Windows artifact contains Kemtiz.exe; the Android artifact contains Kemtiz-Android-LAN.apk and Android-OAuth-SHA1.txt.
+
+## Android Google chooser fix
+
+The Android app has a fallback Credential Manager sign-in request for new/unapproved Google accounts. If the chooser still fails, open the latest preview release and read Android-OAuth-SHA1.txt. In Google Cloud Console, open the **Android OAuth client** with package name com.kemtiz.app and set that exact SHA-1 fingerprint. The build workflow caches its debug signing key so the SHA-1 stays stable across future builds. Install the matching Kemtiz-Android-LAN.apk from that release.
+
+## Data and privacy
+
+- Desktop messages and accounts are stored in %APPDATA%\Kemtiz\data on this PC.
+- Keep the EXE running while using the desktop app.
+- For a phone to connect to the desktop server, both devices must use the same trusted Wi-Fi. The app reports the PC's private LAN address at startup; configure that address in Android's Адрес сервера setting.
+- LAN HTTP is not encrypted. Do not connect over public Wi-Fi, do not forward port 8000 from your router, and do not expose this development server to the internet.
+- Microsoft Edge or Google Chrome must be installed for Google's one-time sign-in step. The messenger itself remains in its own native Qt window.
 
 ## Build locally
 
@@ -30,6 +40,6 @@ With Python 3.12 on Windows, from the repository root:
     python -m pip install -r kemtiz/requirements.txt
     python -m pip install -r kemtiz/desktop/requirements.txt
     python kemtiz/desktop/make_icon.py
-    python -m PyInstaller --noconfirm --clean --onefile --windowed --name Kemtiz --icon kemtiz/desktop/kemtiz.ico --paths kemtiz --add-data "kemtiz/server.py;." --add-data "kemtiz/web;web" --collect-submodules uvicorn kemtiz/desktop/launcher.py
+    python -m PyInstaller --noconfirm --clean --onefile --windowed --name Kemtiz --icon kemtiz/desktop/kemtiz.ico --paths kemtiz --add-data "kemtiz/server.py;." --add-data "kemtiz/web;web" --collect-all PySide6 --collect-all shiboken6 --collect-submodules uvicorn --hidden-import server kemtiz/desktop/launcher.py
 
 The output is dist/Kemtiz.exe.
