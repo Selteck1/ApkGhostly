@@ -147,6 +147,18 @@ def init_db() -> None:
           window_started_at INTEGER NOT NULL,
           send_count INTEGER NOT NULL DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS desktop_login_sessions(
+          session_id TEXT PRIMARY KEY,
+          poll_secret_hash TEXT NOT NULL,
+          device_name TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending','approved','denied','expired','consumed')),
+          approved_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_desktop_login_expiry
+          ON desktop_login_sessions(expires_at);
         """)
         user_columns = {row["name"] for row in c.execute("PRAGMA table_info(users)").fetchall()}
         migrations = {
@@ -248,6 +260,14 @@ class GoogleFinishIn(BaseModel):
     username: str = Field(min_length=3, max_length=25)
     country: str = Field(default="", max_length=64)
     about: str = Field(default="", max_length=200)
+
+
+class DesktopQrStartIn(BaseModel):
+    device_name: str = Field(default="Kemtiz на компьютере", min_length=1, max_length=80)
+
+
+class DesktopQrPollIn(BaseModel):
+    poll_secret: str = Field(min_length=20, max_length=200)
 
 
 class FriendIn(BaseModel):
@@ -531,6 +551,158 @@ async def google_auth_finish(body: GoogleFinishIn):
         user_row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
 
     return {"token": token_for_google_user(uid), "user": private_user(user_row)}
+
+
+DESKTOP_QR_TTL_SECONDS = 180
+
+
+def _desktop_qr_row(session_id: str, poll_secret: str) -> sqlite3.Row:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,100}", session_id or ""):
+        raise HTTPException(status_code=404, detail="QR-сеанс не найден.")
+    with db() as c:
+        row = c.execute(
+            "SELECT * FROM desktop_login_sessions WHERE session_id=?", (session_id,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="QR-сеанс не найден или уже удалён.")
+    supplied_hash = hashlib.sha256(poll_secret.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(supplied_hash, str(row["poll_secret_hash"])):
+        raise HTTPException(status_code=403, detail="Нет доступа к этому QR-сеансу.")
+    return row
+
+
+@app.post("/api/auth/desktop/qr/start")
+def desktop_qr_start(body: DesktopQrStartIn):
+    """Create a short-lived QR session. Only a separate poll secret can complete PC login."""
+    now = int(time.time())
+    session_id = secrets.token_urlsafe(24)
+    poll_secret = secrets.token_urlsafe(32)
+    device_name = body.device_name.strip()[:80] or "Kemtiz на компьютере"
+    with db() as c:
+        c.execute(
+            "DELETE FROM desktop_login_sessions WHERE expires_at < ? OR status IN ('denied','consumed')",
+            (now - 60,),
+        )
+        c.execute(
+            """INSERT INTO desktop_login_sessions
+               (session_id,poll_secret_hash,device_name,status,created_at,expires_at)
+               VALUES(?,?,?,'pending',?,?)""",
+            (session_id, hashlib.sha256(poll_secret.encode("utf-8")).hexdigest(),
+             device_name, now, now + DESKTOP_QR_TTL_SECONDS),
+        )
+    return {
+        "session_id": session_id,
+        "poll_secret": poll_secret,
+        "qr_payload": "kemtiz://desktop-login/" + session_id,
+        "device_name": device_name,
+        "expires_in": DESKTOP_QR_TTL_SECONDS,
+    }
+
+
+@app.get("/api/auth/desktop/qr/{session_id}")
+def desktop_qr_details(session_id: str, user=Depends(auth_user)):
+    now = int(time.time())
+    with db() as c:
+        row = c.execute(
+            "SELECT device_name,status,expires_at FROM desktop_login_sessions WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="QR-сеанс не найден или истёк.")
+        if int(row["expires_at"]) <= now and row["status"] == "pending":
+            c.execute("UPDATE desktop_login_sessions SET status='expired' WHERE session_id=?", (session_id,))
+            status = "expired"
+        else:
+            status = row["status"]
+    return {
+        "device_name": row["device_name"],
+        "status": status,
+        "expires_in": max(0, int(row["expires_at"]) - now),
+    }
+
+
+@app.post("/api/auth/desktop/qr/{session_id}/approve")
+def desktop_qr_approve(session_id: str, user=Depends(auth_user)):
+    now = int(time.time())
+    with db() as c:
+        row = c.execute(
+            "SELECT status,device_name,expires_at FROM desktop_login_sessions WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="QR-сеанс не найден или истёк.")
+        if int(row["expires_at"]) <= now:
+            c.execute("UPDATE desktop_login_sessions SET status='expired' WHERE session_id=?", (session_id,))
+            raise HTTPException(status_code=410, detail="QR-код истёк. Обнови его на компьютере.")
+        if row["status"] != "pending":
+            raise HTTPException(status_code=409, detail="Этот QR-код уже использован или отменён.")
+        c.execute(
+            "UPDATE desktop_login_sessions SET status='approved',approved_user_id=? "
+            "WHERE session_id=? AND status='pending'",
+            (int(user["id"]), session_id),
+        )
+    return {"ok": True, "device_name": row["device_name"]}
+
+
+@app.post("/api/auth/desktop/qr/{session_id}/deny")
+def desktop_qr_deny(session_id: str, user=Depends(auth_user)):
+    now = int(time.time())
+    with db() as c:
+        row = c.execute(
+            "SELECT status,expires_at FROM desktop_login_sessions WHERE session_id=?", (session_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="QR-сеанс не найден или истёк.")
+        if int(row["expires_at"]) <= now:
+            c.execute("UPDATE desktop_login_sessions SET status='expired' WHERE session_id=?", (session_id,))
+            raise HTTPException(status_code=410, detail="QR-код истёк.")
+        if row["status"] != "pending":
+            raise HTTPException(status_code=409, detail="Этот QR-код уже использован или отменён.")
+        c.execute(
+            "UPDATE desktop_login_sessions SET status='denied' WHERE session_id=? AND status='pending'",
+            (session_id,),
+        )
+    return {"ok": True}
+
+
+@app.post("/api/auth/desktop/qr/{session_id}/status")
+def desktop_qr_status(session_id: str, body: DesktopQrPollIn):
+    row = _desktop_qr_row(session_id, body.poll_secret)
+    now = int(time.time())
+    if int(row["expires_at"]) <= now and row["status"] == "pending":
+        with db() as c:
+            c.execute("UPDATE desktop_login_sessions SET status='expired' WHERE session_id=? AND status='pending'",
+                      (session_id,))
+        return {"status": "expired"}
+    return {"status": row["status"]}
+
+
+@app.post("/api/auth/desktop/qr/{session_id}/exchange")
+def desktop_qr_exchange(session_id: str, body: DesktopQrPollIn):
+    row = _desktop_qr_row(session_id, body.poll_secret)
+    now = int(time.time())
+    if int(row["expires_at"]) <= now:
+        with db() as c:
+            c.execute("UPDATE desktop_login_sessions SET status='expired' WHERE session_id=? AND status='approved'",
+                      (session_id,))
+        raise HTTPException(status_code=410, detail="QR-сеанс истёк. Попробуй ещё раз.")
+    if row["status"] != "approved" or row["approved_user_id"] is None:
+        raise HTTPException(status_code=409, detail="Вход ещё не подтверждён на телефоне.")
+    with db() as c:
+        changed = c.execute(
+            "UPDATE desktop_login_sessions SET status='consumed' "
+            "WHERE session_id=? AND status='approved'",
+            (session_id,),
+        ).rowcount
+        if changed != 1:
+            raise HTTPException(status_code=409, detail="Этот QR-сеанс уже был использован.")
+        user_row = c.execute(
+            "SELECT * FROM users WHERE id=?", (int(row["approved_user_id"]),)
+        ).fetchone()
+        if user_row is None:
+            raise HTTPException(status_code=401, detail="Аккаунт больше не существует.")
+    return {"token": token_for_google_user(int(row["approved_user_id"])), "user": private_user(user_row)}
+
 
 @app.get("/api/me")
 def me(user=Depends(auth_user)):

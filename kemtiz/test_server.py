@@ -136,6 +136,73 @@ class KemtizApiTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 401)
 
+    def test_desktop_qr_login_requires_phone_approval_and_is_one_time(self):
+        started = self.client.post("/api/auth/desktop/qr/start", json={
+            "device_name": "Kemtiz Desktop test"
+        })
+        self.assertEqual(started.status_code, 200, started.text)
+        session = started.json()
+        session_id = session["session_id"]
+        poll_secret = session["poll_secret"]
+        self.assertTrue(session["qr_payload"].endswith(session_id))
+
+        pending = self.client.post(
+            f"/api/auth/desktop/qr/{session_id}/status",
+            json={"poll_secret": poll_secret},
+        )
+        self.assertEqual(pending.status_code, 200, pending.text)
+        self.assertEqual(pending.json()["status"], "pending")
+
+        details = self.client.get(
+            f"/api/auth/desktop/qr/{session_id}",
+            headers=self.auth(self.alice_token),
+        )
+        self.assertEqual(details.status_code, 200, details.text)
+        self.assertEqual(details.json()["device_name"], "Kemtiz Desktop test")
+
+        approved = self.client.post(
+            f"/api/auth/desktop/qr/{session_id}/approve",
+            headers=self.auth(self.alice_token),
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+
+        wrong_secret = self.client.post(
+            f"/api/auth/desktop/qr/{session_id}/status",
+            json={"poll_secret": "not-the-session-secret-" + "x" * 20},
+        )
+        self.assertEqual(wrong_secret.status_code, 403)
+
+        exchange = self.client.post(
+            f"/api/auth/desktop/qr/{session_id}/exchange",
+            json={"poll_secret": poll_secret},
+        )
+        self.assertEqual(exchange.status_code, 200, exchange.text)
+        self.assertEqual(exchange.json()["user"]["id"], self.alice_data["user"]["id"])
+        self.assertEqual(
+            self.client.get("/api/me", headers=self.auth(exchange.json()["token"])).json()["id"],
+            self.alice_data["user"]["id"],
+        )
+
+        reused = self.client.post(
+            f"/api/auth/desktop/qr/{session_id}/exchange",
+            json={"poll_secret": poll_secret},
+        )
+        self.assertEqual(reused.status_code, 409)
+
+    def test_desktop_qr_login_cannot_be_approved_without_phone_auth(self):
+        started = self.client.post("/api/auth/desktop/qr/start", json={})
+        self.assertEqual(started.status_code, 200, started.text)
+        session_id = started.json()["session_id"]
+
+        unauthenticated = self.client.post(f"/api/auth/desktop/qr/{session_id}/approve")
+        self.assertEqual(unauthenticated.status_code, 401)
+
+        bad_secret = self.client.post(
+            f"/api/auth/desktop/qr/{session_id}/status",
+            json={"poll_secret": "a" * 36},
+        )
+        self.assertEqual(bad_secret.status_code, 403)
+
     def test_friend_request_direct_chat_and_message(self):
         bob_username = self.bob_data["user"]["username"]
         sent = self.client.post(

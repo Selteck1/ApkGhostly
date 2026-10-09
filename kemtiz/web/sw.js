@@ -1,4 +1,4 @@
-const CACHE = "kemtiz-shell-v4";
+const CACHE = "kemtiz-shell-v5";
 const SHELL = ["/", "/assets/style.css", "/assets/app.js", "/assets/icon.svg", "/assets/manifest.webmanifest"];
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

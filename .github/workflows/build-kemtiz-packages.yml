@@ -64,12 +64,27 @@ jobs:
       - name: Include desktop instructions
         run: Copy-Item kemtiz/desktop/README.md dist/README-Desktop.txt
 
-      - name: Upload Windows EXE
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: powershell
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) { $compiler = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
+          if (!(Test-Path $compiler)) { throw "Inno Setup compiler was not installed." }
+          & $compiler "kemtiz\desktop\installer.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path "dist\Kemtiz-Setup.exe")) { throw "Kemtiz-Setup.exe was not created." }
+
+      - name: Upload Windows EXE and installer
         uses: actions/upload-artifact@v4
         with:
           name: Kemtiz-Desktop-Windows
           path: |
             dist/Kemtiz.exe
+            dist/Kemtiz-Setup.exe
             dist/README-Desktop.txt
           if-no-files-found: error
           retention-days: 30
@@ -162,13 +177,15 @@ jobs:
           body: |
             Kemtiz preview build from branch kemtiz-messenger.
 
-            - Kemtiz.exe is the Windows desktop app and runs the server on the PC.
-            - Kemtiz-Android-LAN.apk supports a private-LAN HTTP server address.
-            - Keep both devices on the same trusted Wi-Fi. Do not expose port 8000 to the public internet; LAN HTTP is not encrypted.
+            - Kemtiz-Setup.exe installs Kemtiz and creates a desktop shortcut; Kemtiz.exe is the portable build.
+            - Desktop login is confirmed by scanning the short-lived QR code in the Android app.
+            - For the local preview, point the Android app at the PC server's private LAN address and keep both devices on trusted Wi-Fi.
+            - This preview does not provision a public HTTPS server. Never expose port 8000 directly to the internet; LAN HTTP is not encrypted.
           prerelease: true
           make_latest: false
           files: |
             release-assets/Kemtiz.exe
+            release-assets/Kemtiz-Setup.exe
             release-assets/README-Desktop.txt
             release-assets/Kemtiz-Android-LAN.apk
             release-assets/Android-OAuth-SHA1.txt

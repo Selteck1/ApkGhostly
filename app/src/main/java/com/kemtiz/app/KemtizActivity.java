@@ -16,6 +16,8 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import org.json.JSONObject;
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -164,6 +166,58 @@ public class KemtizActivity extends Activity {
         public void signIn(String clientId) {
             runOnUiThread(() -> beginGoogleSignIn(clientId));
         }
+
+        @JavascriptInterface
+        public void scanQrCode() {
+            runOnUiThread(() -> beginQrScan());
+        }
+    }
+
+    private void beginQrScan() {
+        try {
+            GmsBarcodeScanning.getClient(this).startScan()
+                .addOnSuccessListener(barcode -> {
+                    String value = barcode == null ? null : barcode.getRawValue();
+                    if (value == null || value.trim().isEmpty()) {
+                        sendQrError("В QR-коде нет данных. Попробуй ещё раз.");
+                    } else {
+                        sendQrScanned(value.trim());
+                    }
+                })
+                .addOnCanceledListener(() -> sendQrError("Сканирование QR-кода отменено."))
+                .addOnFailureListener(error -> {
+                    String detail = error == null ? "" : error.getClass().getSimpleName();
+                    sendQrError("Не удалось открыть сканер QR-кода" +
+                        (detail.isEmpty() ? "." : " (" + detail + ").") +
+                        " Проверь интернет и сервисы Google Play.");
+                });
+        } catch (Exception error) {
+            sendQrError("Не удалось запустить сканер QR-кода: " + error.getClass().getSimpleName());
+        }
+    }
+
+    private void sendQrScanned(String value) {
+        String quoted = JSONObject.quote(value == null ? "" : value);
+        runOnUiThread(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                    "window.KemtizNativeQrScanned && window.KemtizNativeQrScanned(" + quoted + ");",
+                    null
+                );
+            }
+        });
+    }
+
+    private void sendQrError(String message) {
+        String quoted = JSONObject.quote(message == null ? "Сканирование QR-кода не удалось." : message);
+        runOnUiThread(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                    "window.KemtizNativeQrError && window.KemtizNativeQrError(" + quoted + ");",
+                    null
+                );
+            }
+        });
     }
 
     private void beginGoogleSignIn(String clientId) {

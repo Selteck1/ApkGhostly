@@ -196,6 +196,66 @@
     $("authError").textContent = String(message || "Не удалось войти через Google.");
   };
 
+  window.KemtizNativeQrScanned = async (rawValue) => {
+    const match = String(rawValue || "").trim().match(/^kemtiz:\/\/desktop-login\/([A-Za-z0-9_-]{20,100})$/);
+    if (!match) {
+      showToast("Это не QR-код входа в Kemtiz Desktop.", true);
+      return;
+    }
+    if (!state.token || !state.me) {
+      showToast("Сначала войди в Kemtiz на телефоне.", true);
+      return;
+    }
+    const sessionId = match[1];
+    try {
+      const session = await api("/api/auth/desktop/qr/" + encodeURIComponent(sessionId));
+      if (session.status !== "pending" || session.expires_in <= 0) {
+        showToast("Этот QR-код уже истёк или использован. Обнови его на компьютере.", true);
+        return;
+      }
+      state.pendingDesktopSessionId = sessionId;
+      $("desktopLoginDevice").textContent = String(session.device_name || "Kemtiz на компьютере").slice(0, 80);
+      $("desktopLoginFeedback").textContent = "";
+      $("approveDesktopLoginButton").disabled = false;
+      $("denyDesktopLoginButton").disabled = false;
+      $("desktopLoginModal").classList.remove("hidden");
+    } catch (error) {
+      showToast(error.message || "Не удалось проверить QR-код.", true);
+    }
+  };
+
+  async function answerDesktopLogin(approve) {
+    const sessionId = state.pendingDesktopSessionId;
+    if (!sessionId) return;
+    const approveButton = $("approveDesktopLoginButton");
+    const denyButton = $("denyDesktopLoginButton");
+    approveButton.disabled = true;
+    denyButton.disabled = true;
+    $("desktopLoginFeedback").textContent = "Отправляю ответ…";
+    try {
+      const action = approve ? "approve" : "deny";
+      await api("/api/auth/desktop/qr/" + encodeURIComponent(sessionId) + "/" + action, {
+        method: "POST", body: {}
+      });
+      $("desktopLoginModal").classList.add("hidden");
+      state.pendingDesktopSessionId = "";
+      showToast(approve ? "Вход подтверждён. Вернись в Kemtiz на компьютере." : "Вход на компьютер отклонён.");
+    } catch (error) {
+      $("desktopLoginFeedback").textContent = error.message || "Не удалось отправить ответ.";
+      approveButton.disabled = false;
+      denyButton.disabled = false;
+    }
+  }
+
+  $("approveDesktopLoginButton").addEventListener("click", () => answerDesktopLogin(true));
+  $("denyDesktopLoginButton").addEventListener("click", () => answerDesktopLogin(false));
+
+  window.KemtizNativeQrError = (message) => {
+    const text = String(message || "Не удалось отсканировать QR-код.");
+    if (text.includes("отменено")) return;
+    showToast(text, true);
+  };
+
   $("googleSetupButton").addEventListener("click", () => {
     if (!state.googleClientId) {
       $("authError").textContent = "Для входа настрой KEMTIZ_GOOGLE_CLIENT_ID в конфигурации сервера. Google не позволяет вход без OAuth Client ID.";
@@ -278,6 +338,18 @@
   }
 
   $("logoutButton").addEventListener("click", () => logout(true));
+
+  $("connectPcButton").addEventListener("click", () => {
+    if (!state.token || !state.me) {
+      showToast("Сначала войди в Kemtiz на телефоне.", true);
+      return;
+    }
+    if (window.KemtizNativeGoogle && typeof window.KemtizNativeGoogle.scanQrCode === "function") {
+      window.KemtizNativeGoogle.scanQrCode();
+    } else {
+      showToast("Сканирование QR-кода доступно в Android-приложении Kemtiz.", true);
+    }
+  });
 
   async function refreshAll() {
     await Promise.allSettled([refreshFriends(), refreshRequests(), refreshChats()]);
