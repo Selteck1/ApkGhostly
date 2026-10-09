@@ -1,13 +1,9 @@
-name: Build Kemtiz Desktop and Android
+name: Build Kemtiz Android
 
 on:
   push:
     branches: ["kemtiz-messenger"]
     paths:
-      - "README.md"
-      - "render.yaml"
-      - "kemtiz/DEPLOY.md"
-      - "kemtiz/desktop/**"
       - "kemtiz/server.py"
       - "kemtiz/requirements.txt"
       - "kemtiz/web/**"
@@ -23,76 +19,8 @@ permissions:
   contents: read
 
 jobs:
-  windows-desktop:
-    name: Build Windows EXE
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            kemtiz/requirements.txt
-            kemtiz/desktop/requirements.txt
-
-      - name: Install dependencies
-        run: python -m pip install -r kemtiz/requirements.txt -r kemtiz/desktop/requirements.txt
-
-      - name: Generate Kemtiz icon
-        run: python kemtiz/desktop/make_icon.py
-
-      - name: Validate Python sources
-        run: python -m compileall -q kemtiz/server.py kemtiz/desktop/launcher.py kemtiz/desktop/make_icon.py
-
-      - name: Package Kemtiz.exe
-        run: >
-          python -m PyInstaller
-          --noconfirm
-          --clean
-          --onefile
-          --windowed
-          --name Kemtiz
-          --icon kemtiz/desktop/kemtiz.ico
-          --paths kemtiz
-          --add-data "kemtiz/desktop/kemtiz.png;assets"
-          --collect-all PySide6
-          --collect-all shiboken6
-          kemtiz/desktop/launcher.py
-
-      - name: Include desktop instructions
-        run: Copy-Item kemtiz/desktop/README.md dist/README-Desktop.txt
-
-      - name: Install Inno Setup
-        shell: powershell
-        run: choco install innosetup --yes --no-progress
-
-      - name: Build Windows installer
-        shell: powershell
-        run: |
-          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (!(Test-Path $compiler)) { $compiler = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
-          if (!(Test-Path $compiler)) { throw "Inno Setup compiler was not installed." }
-          & $compiler "kemtiz\desktop\installer.iss"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (!(Test-Path "dist\Kemtiz-Setup.exe")) { throw "Kemtiz-Setup.exe was not created." }
-
-      - name: Upload Windows EXE and installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kemtiz-Desktop-Windows
-          path: |
-            dist/Kemtiz.exe
-            dist/Kemtiz-Setup.exe
-            dist/README-Desktop.txt
-          if-no-files-found: error
-          retention-days: 30
-
   android-apk:
-    name: Build Android APK with LAN support
+    name: Build Android APK with stable signing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -109,6 +37,23 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Prepare Android debug key directory
+        run: mkdir -p "$HOME/.android"
+
+      - name: Restore stable Kemtiz debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: kemtiz-debug-signing-key-v1
+
+      - name: Create stable debug signing key if missing
+        shell: bash
+        run: |
+          KEYSTORE="$HOME/.android/debug.keystore"
+          if [ ! -f "$KEYSTORE" ]; then
+            keytool -genkeypair -v -storetype JKS -keystore "$KEYSTORE" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Restore embedded intro video
         run: |
           mkdir -p app/src/main/res/raw
@@ -121,8 +66,12 @@ jobs:
       - name: Print Android OAuth SHA-1 fingerprint
         shell: bash
         run: |
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          test -x "$APKSIGNER"
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          APKSIGNER="$(find "$SDK_DIR/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "apksigner not found in Android SDK build-tools" >&2
+            exit 1
+          fi
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee android-signature.txt
           SHA1="$(awk '/certificate SHA-1 digest:/{print $NF; exit}' android-signature.txt)"
           test -n "$SHA1"
@@ -131,29 +80,29 @@ jobs:
           {
             echo "### Android OAuth fingerprint"
             echo
-            echo "\`$SHA1_COLON\`"
+            echo "`$SHA1_COLON`"
             echo
-            echo "Copy the colon-separated SHA-1 into Google Cloud → Android OAuth client for package com.kemtiz.app."
+            echo "Android package: com.kemtiz.app"
+            echo "Copy this SHA-1 into the Android OAuth client in Google Cloud."
           } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Prepare Android release files
         run: |
           mkdir -p android-release
-          cp app/build/outputs/apk/debug/app-debug.apk android-release/Kemtiz-Android-LAN.apk
+          cp app/build/outputs/apk/debug/app-debug.apk android-release/Kemtiz-Android.apk
           cp Android-OAuth-SHA1.txt android-release/Android-OAuth-SHA1.txt
 
       - name: Upload Android APK and OAuth fingerprint
         uses: actions/upload-artifact@v4
         with:
-          name: Kemtiz-Android-LAN
+          name: Kemtiz-Android
           path: android-release/*
           if-no-files-found: error
           retention-days: 30
 
-  publish-preview-release:
-    name: Publish downloadable preview
+  publish-android-release:
+    name: Publish downloadable Android APK
     if: github.ref == 'refs/heads/kemtiz-messenger'
-    needs: [windows-desktop, android-apk]
+    needs: [android-apk]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -164,8 +113,8 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
+          name: Kemtiz-Android
           path: release-assets
-          merge-multiple: true
 
       - name: Prepare release files
         run: |
@@ -174,21 +123,19 @@ jobs:
       - name: Publish preview release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: kemtiz-desktop-${{ github.run_number }}
-          name: "Kemtiz Desktop preview #${{ github.run_number }}"
+          tag_name: kemtiz-android-${{ github.run_number }}
+          name: "Kemtiz Android preview #${{ github.run_number }}"
           body: |
-            Kemtiz preview build from branch kemtiz-messenger.
+            Kemtiz Android preview build from branch kemtiz-messenger.
 
-            - Kemtiz-Setup.exe installs the Windows client and creates a desktop shortcut; Kemtiz.exe is the portable client.
-            - The EXE contains no Kemtiz backend or database. On first launch, enter the public HTTPS server URL.
-            - Android and Windows must use the same deployed server and shared PostgreSQL database for QR login to work across networks.
-            - The repository includes render.yaml and kemtiz/DEPLOY.md to deploy the API and connect Neon PostgreSQL.
-            - This release does not automatically create a hosted server. Finish the hosting setup before testing account login.
+            - Install Kemtiz-Android.apk on the phone.
+            - On first launch, enter the shared HTTPS server URL.
+            - Deploy the API and PostgreSQL database using render.yaml and kemtiz/DEPLOY.md before signing in.
+            - The Android OAuth SHA-1 fingerprint is included as Android-OAuth-SHA1.txt.
+            - This workflow uses a persistent CI debug signing key so subsequent builds can update the APK.
+            - This is an early test build without end-to-end encryption or full account recovery.
           prerelease: true
           make_latest: false
           files: |
-            release-assets/Kemtiz.exe
-            release-assets/Kemtiz-Setup.exe
-            release-assets/README-Desktop.txt
-            release-assets/Kemtiz-Android-LAN.apk
+            release-assets/Kemtiz-Android.apk
             release-assets/Android-OAuth-SHA1.txt
