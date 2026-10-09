@@ -174,6 +174,21 @@
     </section>
   </main>
 
+  <section id="desktopLoginModal" class="confirm-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="desktopLoginTitle">
+    <div class="confirm-card">
+      <div class="confirm-mark">↗</div>
+      <p class="eyebrow">ЗАПРОС НА ВХОД</p>
+      <h2 id="desktopLoginTitle">Подключить компьютер?</h2>
+      <p class="confirm-copy">Разрешить вход в твой аккаунт Kemtiz на устройстве:</p>
+      <div id="desktopLoginDevice" class="confirm-device">Kemtiz на компьютере Windows</div>
+      <p class="confirm-warning">Подтверждай только если ты сам открыл этот QR-код на своём компьютере.</p>
+      <div class="confirm-actions">
+        <button id="denyDesktopLoginButton" class="button" type="button">Отклонить</button>
+        <button id="approveDesktopLoginButton" class="button primary" type="button">Разрешить вход</button>
+      </div>
+      <div id="desktopLoginFeedback" class="feedback" role="status" aria-live="polite"></div>
+    </div>
+  </section>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://accounts.google.com/gsi/client" defer></script>
   <script src="/assets/app.js" defer></script>
