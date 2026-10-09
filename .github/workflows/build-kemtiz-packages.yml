@@ -80,7 +80,7 @@ jobs:
           {
             echo "### Android OAuth fingerprint"
             echo
-            echo "`$SHA1_COLON`"
+            echo "\`$SHA1_COLON\`"
             echo
             echo "Android package: com.kemtiz.app"
             echo "Copy this SHA-1 into the Android OAuth client in Google Cloud."
@@ -119,6 +119,8 @@ jobs:
       - name: Prepare release files
         run: |
           ls -lh release-assets
+          test -s release-assets/Kemtiz-Android.apk
+          test -s release-assets/Android-OAuth-SHA1.txt
 
       - name: Publish preview release
         uses: softprops/action-gh-release@v2
