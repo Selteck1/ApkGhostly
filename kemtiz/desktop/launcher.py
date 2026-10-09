@@ -20,10 +20,10 @@ from typing import Any
 import httpx
 import uvicorn
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QDialogButtonBox, QFormLayout,
-    QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+    QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QMenu,
     QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
     QSplitter, QStackedWidget, QTabWidget, QVBoxLayout, QWidget, QComboBox,
 )
@@ -626,18 +626,18 @@ class MainWindow(QMainWindow):
         current_friend_id = current_friend.data(Qt.ItemDataRole.UserRole) if current_friend else None
         self.friends_list.clear()
         for person in self.friends:
-            item = QListWidgetItem(f"{person['display_name']}\\n@{person['username']}  ·  {'онлайн' if person.get('online') else 'не в сети'}")
+            item = QListWidgetItem(f"{person['display_name']}\n@{person['username']}  ·  {'онлайн' if person.get('online') else 'не в сети'}")
             item.setData(Qt.ItemDataRole.UserRole, person["id"])
             self.friends_list.addItem(item)
             if person["id"] == current_friend_id:
                 self.friends_list.setCurrentItem(item)
         self.requests_list.clear()
         for req in self.incoming:
-            item = QListWidgetItem(f"⬇  {req['display_name']}\\n@{req['username']}  ·  двойной щелчок: ответ")
+            item = QListWidgetItem(f"⬇  {req['display_name']}\n@{req['username']}  ·  двойной щелчок: ответ")
             item.setData(Qt.ItemDataRole.UserRole, req["request_id"])
             self.requests_list.addItem(item)
         for req in self.outgoing:
-            item = QListWidgetItem(f"↗  {req['display_name']}\\n@{req['username']}  ·  ожидает ответа")
+            item = QListWidgetItem(f"↗  {req['display_name']}\n@{req['username']}  ·  ожидает ответа")
             item.setData(Qt.ItemDataRole.UserRole, -int(req["request_id"]))
             self.requests_list.addItem(item)
         self.profile_label.setText(f"{self.me.get('display_name','Kemtiz')}  ·  @{self.me.get('username','')}")
@@ -650,7 +650,7 @@ class MainWindow(QMainWindow):
             preview = chat.get("last_message") or "Нет сообщений"
             if len(preview) > 56:
                 preview = preview[:53] + "…"
-            item = QListWidgetItem(f"{chat.get('title','Чат')}\\n{preview}")
+            item = QListWidgetItem(f"{chat.get('title','Чат')}\n{preview}")
             item.setData(Qt.ItemDataRole.UserRole, chat["id"])
             self.chats_list.addItem(item)
             if chat["id"] == selected_id:
@@ -666,7 +666,7 @@ class MainWindow(QMainWindow):
             friend_ids = {x["id"] for x in self.friends}
             for person in results:
                 suffix = " · уже друг" if person["id"] in friend_ids else " · двойной щелчок: заявка"
-                item = QListWidgetItem(f"{person['display_name']}\\n@{person['username']}{suffix}")
+                item = QListWidgetItem(f"{person['display_name']}\n@{person['username']}{suffix}")
                 item.setData(Qt.ItemDataRole.UserRole, person)
                 self.search_results.addItem(item)
         except Exception as exc:
@@ -747,7 +747,7 @@ class MainWindow(QMainWindow):
                 mine = int(message.get("sender_id", -1)) == int((self.me or {}).get("id", -2))
                 stamp = str(message.get("created_at", ""))[:16].replace("T", " ")
                 sender = "Ты" if mine else message.get("sender_display_name", "Пользователь")
-                item = QListWidgetItem(f"{sender}  ·  {stamp}\\n{message.get('body','')}")
+                item = QListWidgetItem(f"{sender}  ·  {stamp}\n{message.get('body','')}")
                 item.setData(Qt.ItemDataRole.UserRole, message)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
                 self.message_list.addItem(item)
@@ -780,12 +780,11 @@ class MainWindow(QMainWindow):
         message = item.data(Qt.ItemDataRole.UserRole)
         if not isinstance(message, dict) or not self.me or int(message.get("sender_id", -1)) != int(self.me["id"]):
             return
-        menu = self.menuBar().addMenu("Сообщение")
+        menu = QMenu(self)
         delete = QAction("Удалить сообщение", self)
         menu.addAction(delete)
         delete.triggered.connect(lambda: self.delete_message(message))
         menu.exec(self.message_list.mapToGlobal(position))
-        self.menuBar().clear()
 
     def delete_message(self, message: dict[str, Any]):
         if QMessageBox.question(self, "Удаление", "Удалить это сообщение?") != QMessageBox.StandardButton.Yes:
