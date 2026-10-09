@@ -149,6 +149,9 @@
     localStorage.removeItem("kemtiz_token");
     $("appView").classList.add("hidden");
     $("authView").classList.remove("hidden");
+    $("phone").value = "";
+    $("authCode").value = "";
+    setAuthStage("phone");
     document.body.classList.remove("chat-open");
     if (showMessage) showToast("Ты вышел из аккаунта.");
   }
