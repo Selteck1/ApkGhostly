@@ -76,6 +76,47 @@ class KemtizApiTests(unittest.TestCase):
         self.assertNotIn("password", data["user"])
         return credential, identity, data, data["token"]
 
+    def test_password_register_login_and_wrong_password(self):
+        username = "pass_user_01"
+        password = "correct-horse-123"
+        created = self.client.post("/api/auth/password/register", json={
+            "username": username,
+            "password": password,
+            "display_name": "Password User",
+        })
+        self.assertEqual(created.status_code, 200, created.text)
+        data = created.json()
+        self.assertEqual(data["user"]["username"], username)
+        self.assertEqual(data["user"]["display_name"], "Password User")
+        self.assertNotIn("password_hash", data["user"])
+        self.assertNotIn("password", data["user"])
+        self.assertEqual(self.client.get("/api/me", headers=self.auth(data["token"])).status_code, 200)
+
+        login = self.client.post("/api/auth/password/login", json={
+            "username": username,
+            "password": password,
+        })
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertEqual(login.json()["user"]["id"], data["user"]["id"])
+
+        wrong = self.client.post("/api/auth/password/login", json={
+            "username": username,
+            "password": "not-the-password",
+        })
+        self.assertEqual(wrong.status_code, 401)
+
+    def test_password_registration_rejects_duplicate_login_and_short_password(self):
+        username = "duplicate_01"
+        payload = {"username": username, "password": "long-password-123"}
+        first = self.client.post("/api/auth/password/register", json=payload)
+        self.assertEqual(first.status_code, 200, first.text)
+        duplicate = self.client.post("/api/auth/password/register", json=payload)
+        self.assertEqual(duplicate.status_code, 409)
+        too_short = self.client.post("/api/auth/password/register", json={
+            "username": "another_01", "password": "123"
+        })
+        self.assertEqual(too_short.status_code, 422)
+
     def test_root_is_android_api_not_a_website(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200, response.text)
