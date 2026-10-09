@@ -178,10 +178,11 @@ jobs:
           body: |
             Kemtiz preview build from branch kemtiz-messenger.
 
-            - Kemtiz-Setup.exe installs Kemtiz and creates a desktop shortcut; Kemtiz.exe is the portable build.
-            - Desktop login is confirmed by scanning the short-lived QR code in the Android app.
-            - For the local preview, point the Android app at the PC server's private LAN address and keep both devices on trusted Wi-Fi.
-            - This preview does not provision a public HTTPS server. Never expose port 8000 directly to the internet; LAN HTTP is not encrypted.
+            - Kemtiz-Setup.exe installs the Windows client and creates a desktop shortcut; Kemtiz.exe is the portable client.
+            - The EXE contains no Kemtiz backend or database. On first launch, enter the public HTTPS server URL.
+            - Android and Windows must use the same deployed server and shared PostgreSQL database for QR login to work across networks.
+            - The repository includes render.yaml and kemtiz/DEPLOY.md to deploy the API and connect Neon PostgreSQL.
+            - This release does not automatically create a hosted server. Finish the hosting setup before testing account login.
           prerelease: true
           make_latest: false
           files: |
