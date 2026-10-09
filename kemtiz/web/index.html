@@ -15,39 +15,84 @@
   <div class="ambient ambient-two"></div>
 
   <section id="authView" class="auth-shell">
-    <div class="brand-lockup">
-      <div class="brand-mark">K</div>
-      <div>
-        <div class="brand-name">KEMTIZ</div>
-        <div class="brand-tagline">ТВОИ ЛЮДИ. ТВОИ ЧАТЫ.</div>
-      </div>
-    </div>
-    <div class="auth-card">
-      <div class="eyebrow">ВХОД ПО ТЕЛЕФОНУ</div>
-      <h1 id="authTitle">Вход и регистрация</h1>
-      <p id="authDescription" class="muted">Введи номер телефона. Если ты здесь впервые, аккаунт создастся автоматически.</p>
-      <form id="authForm" class="phone-auth-form">
-        <label class="field-label" for="phone">Номер телефона</label>
-        <input id="phone" class="text-field" name="phone" type="tel" inputmode="tel" required maxlength="32" autocomplete="tel" placeholder="+7 900 123-45-67" aria-describedby="authDescription">
-        <div id="codeSection" class="hidden">
-          <label class="field-label" for="authCode">Код из SMS</label>
-          <input id="authCode" class="text-field code-field" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" aria-label="Шестизначный код из SMS">
-          <p id="codeHint" class="muted code-hint">Код действует 5 минут.</p>
+    <div class="auth-hero">
+      <div class="brand-lockup auth-brand-lockup">
+        <img class="brand-mark-img" src="/assets/icon.svg" alt="">
+        <div>
+          <div class="brand-name">KEMTIZ</div>
+          <div class="brand-tagline">ТВОИ ЛЮДИ. ТВОИ ЧАТЫ.</div>
         </div>
-        <button id="authSubmit" class="button primary full-width" type="submit">Получить код <span>↗</span></button>
-        <button id="changePhoneButton" class="auth-change-button hidden" type="button">← Изменить номер</button>
-        <div id="authError" class="feedback" role="status" aria-live="polite"></div>
-      </form>
-      <div class="auth-note"><span class="status-dot"></span> Вход без пароля · подтверждение по SMS</div>
+      </div>
+      <div class="auth-hero-copy">
+        <div class="hero-kicker"><span class="hero-kicker-dot"></span> ТВОЁ ЦИФРОВОЕ ПРОСТРАНСТВО</div>
+        <h2>Будь ближе.<br><span>Общайся свободно.</span></h2>
+        <p>Kemtiz объединяет твои разговоры в одном месте. На компьютере, планшете и телефоне.</p>
+      </div>
+      <div class="auth-feature-list">
+        <div class="auth-feature"><span class="feature-glyph">✦</span><div><strong>Один аккаунт</strong><span>Вход через Google без нового пароля</span></div></div>
+        <div class="auth-feature"><span class="feature-glyph">◎</span><div><strong>Твои люди</strong><span>Находи друзей по уникальному username</span></div></div>
+        <div class="auth-feature"><span class="feature-glyph">↗</span><div><strong>На любом экране</strong><span>Удобный интерфейс для ПК и мобильных</span></div></div>
+      </div>
+      <div class="auth-hero-footer"><span class="hero-footer-line"></span> KEMTIZ <span>·</span> БЛИЖЕ, ЧЕМ КАЖЕТСЯ</div>
     </div>
-    <div class="footer-note">Kemtiz · ранняя тестовая версия</div>
+
+    <div class="auth-card">
+      <div id="googleLoginView">
+        <div class="eyebrow">KEMTIZ ACCOUNT</div>
+        <h1 id="authTitle">Добро пожаловать</h1>
+        <p id="authDescription" class="muted">Продолжи с Google — быстро, удобно и без отдельного пароля.</p>
+        <div class="google-button-wrap">
+          <div id="googleButton">
+            <button id="googleSetupButton" class="google-signin-button" type="button">
+              <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" transform="translate(0 5) scale(.8)"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.72 7.18l7.62 5.91c4.45-4.1 7.14-10.15 7.14-17.56z" transform="translate(0 1) scale(.9)"/><path fill="#FBBC05" d="M10.53 28.59a14.4 14.4 0 0 1 0-9.18l-7.98-6.2a24 24 0 0 0 0 21.58l7.98-6.2z" transform="translate(2 5) scale(.8)"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.8l-7.62-5.9c-2.13 1.43-4.86 2.27-8.28 2.27-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.2C6.51 43.62 14.62 48 24 48z" transform="translate(0 -3) scale(.8)"/></svg>
+              Продолжить с Google
+            </button>
+          </div>
+        </div>
+        <div id="authError" class="feedback" role="status" aria-live="polite"></div>
+        <div class="auth-divider"><span></span><b>БЕЗ ЛИШНИХ ПАРОЛЕЙ</b><span></span></div>
+        <p class="google-privacy-note">Выбери Google-аккаунт в стандартном окне Google. Kemtiz не просит и не хранит пароль от твоей почты.</p>
+        <div class="auth-policy-note"><span class="policy-lock">⌑</span><span>Продолжая, ты создаёшь аккаунт Kemtiz и принимаешь правила использования сервиса.</span></div>
+      </div>
+
+      <form id="profileForm" class="profile-form hidden">
+        <div class="eyebrow">ПОСЛЕДНИЙ ШАГ</div>
+        <h1>Настрой свой профиль</h1>
+        <p class="muted">Имя и почту мы получили от Google. Осталось придумать username.</p>
+        <div class="google-profile-summary">
+          <div id="googleAvatar" class="google-avatar">G</div>
+          <div class="google-profile-copy"><strong id="googleDisplayName">Google аккаунт</strong><span id="googleProfileEmail">example@gmail.com</span></div>
+          <span class="verified-mark" title="Google подтверждён">✓</span>
+        </div>
+        <label class="field-label" for="profileUsername">Username <span class="field-optional">обязательно</span></label>
+        <div class="username-input-wrap"><span>@</span><input id="profileUsername" class="text-field" name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username" autocapitalize="none" placeholder="your_username"></div>
+        <p class="field-hint">3–24 символа: латинские буквы, цифры и подчёркивание. По нему тебя смогут найти друзья.</p>
+        <label class="field-label" for="profileCountry">Страна <span class="field-optional">необязательно</span></label>
+        <select id="profileCountry" class="text-field" name="country">
+          <option value="">Не указывать</option>
+          <option value="Россия">Россия</option>
+          <option value="Германия">Германия</option>
+          <option value="Казахстан">Казахстан</option>
+          <option value="Беларусь">Беларусь</option>
+          <option value="Украина">Украина</option>
+          <option value="США">США</option>
+          <option value="Другая страна">Другая страна</option>
+        </select>
+        <label class="field-label" for="profileAbout">О себе <span class="field-optional">необязательно</span></label>
+        <textarea id="profileAbout" class="text-field profile-about" name="about" maxlength="200" rows="3" placeholder="Пара слов о себе…"></textarea>
+        <button id="finishProfileButton" class="button primary full-width" type="submit">Создать аккаунт <span>↗</span></button>
+        <button id="cancelProfileButton" class="auth-cancel-button" type="button">← Назад к Google</button>
+        <div id="profileError" class="feedback" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+    <div class="footer-note auth-footer-note">© 2026 Kemtiz · ранняя тестовая версия</div>
   </section>
 
   <main id="appView" class="app-shell hidden">
     <aside class="sidebar">
       <div class="sidebar-top">
         <div class="brand-lockup small">
-          <div class="brand-mark">K</div>
+          <img class="brand-mark-img" src="/assets/icon.svg" alt="">
           <div>
             <div class="brand-name">KEMTIZ</div>
             <div class="brand-tagline">MESSENGER</div>
@@ -126,6 +171,7 @@
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="https://accounts.google.com/gsi/client" defer></script>
   <script src="/assets/app.js" defer></script>
 </body>
 </html>
