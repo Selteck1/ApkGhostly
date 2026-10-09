@@ -132,6 +132,9 @@ class _PostgresConnection:
         sql = re.sub(r"\bINTEGER\b", "BIGINT", sql, flags=re.IGNORECASE)
         sql = re.sub(r"\s+COLLATE\s+NOCASE\b", "", sql, flags=re.IGNORECASE)
         sql = re.sub(r"\bLIKE\b", "ILIKE", sql, flags=re.IGNORECASE)
+        # SQLite query strings use two source backslashes for a one-character
+        # ESCAPE literal. PostgreSQL needs an E-string to preserve that meaning.
+        sql = sql.replace("ESCAPE '\\\\'", "ESCAPE E'\\\\'")
         sql = re.sub(r"MAX\(last_read_id\s*,\s*\?\)",
                      "GREATEST(last_read_id,?)", sql, flags=re.IGNORECASE)
         ignore_conflicts = bool(re.match(r"INSERT\s+OR\s+IGNORE\s+INTO\b", sql, re.IGNORECASE))
