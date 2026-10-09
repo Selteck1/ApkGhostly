@@ -1,4 +1,3 @@
 <resources>
-    <string name="app_name">Ghostly</string>
-    <string name="server_url">http://127.0.0.1:8081</string>
+    <string name="app_name">Kemtiz</string>
 </resources>
