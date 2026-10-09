@@ -607,7 +607,7 @@ public class KemtizActivity extends Activity {
     private void api(String method,String path,JSONObject body,Result callback){
         Request.Builder b=new Request.Builder().url(API+path);
         if(!token.isEmpty())b.header("Authorization","Bearer "+token);
-        if("POST".equals(method))b.post(RequestBody.create(body==null?"{}":body.toString(),JSON));else b.get();
+        if("POST".equals(method))b.post(RequestBody.create(JSON,body==null?"{}":body.toString()));else b.get();
         http.newCall(b.build()).enqueue(new Callback(){
             @Override public void onFailure(Call call,IOException e){main.post(()->callback.done(null,"Нет соединения с сервером. Проверь интернет и повтори попытку."));}
             @Override public void onResponse(Call call,Response response)throws IOException{
