@@ -58,6 +58,7 @@ jobs:
           --name Kemtiz
           --icon kemtiz/desktop/kemtiz.ico
           --paths kemtiz
+          --add-data "kemtiz/desktop/kemtiz.png;assets"
           --collect-all PySide6
           --collect-all shiboken6
           kemtiz/desktop/launcher.py
