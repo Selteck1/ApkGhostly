@@ -26,7 +26,7 @@ button:disabled{cursor:default;opacity:.55}
 .ambient{position:fixed;pointer-events:none;filter:blur(95px);opacity:.16;z-index:-1;border-radius:50%}
 .ambient-one{width:420px;height:420px;top:-220px;left:-70px;background:#6944c9}
 .ambient-two{width:330px;height:330px;bottom:-210px;right:0;background:#2e668f}
-.auth-shell{min-height:100%;width:100%;display:grid;grid-template-columns:minmax(300px,460px) minmax(400px,480px);align-items:center;justify-content:center;gap:clamp(40px,7vw,130px);padding:clamp(28px,5vw,82px);overflow:auto;position:relative}
+.auth-shell{height:100dvh;max-height:100dvh;min-height:0;width:100%;display:grid;grid-template-columns:minmax(300px,460px) minmax(400px,480px);align-items:center;align-content:center;justify-content:center;gap:clamp(40px,7vw,130px);padding:clamp(28px,5vw,82px);overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;position:relative}
 .auth-hero{display:flex;flex-direction:column;align-self:center;max-width:490px;min-width:0}
 .auth-brand-lockup{margin:0 0 clamp(44px,8vh,94px);gap:16px}
 .brand-mark-img{display:block;width:52px;height:52px;flex:0 0 52px;object-fit:contain;filter:drop-shadow(0 7px 24px rgba(117,77,255,.22))}
@@ -241,7 +241,8 @@ button:disabled{cursor:default;opacity:.55}
 }
 @media (max-width:760px){
   body{overflow:hidden}
-  .auth-shell{display:flex;flex-direction:column;justify-content:flex-start;gap:0;padding:max(22px,env(safe-area-inset-top)) 16px 24px}
+  .auth-shell{height:100dvh;max-height:100dvh;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;align-content:initial;gap:0;padding:max(22px,env(safe-area-inset-top)) 16px 24px;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain}
+  .auth-hero,.auth-card,.auth-footer-note{flex-shrink:0}
   .auth-hero{width:100%;max-width:480px}
   .auth-brand-lockup{margin:0 0 25px}
   .auth-brand-lockup .brand-mark-img{width:43px;height:43px;flex-basis:43px}
