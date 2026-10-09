@@ -3,23 +3,17 @@ plugins {
 }
 
 android {
-    namespace "com.ghostly.apk"
+    namespace "com.kemtiz.app"
     compileSdk 35
 
-    buildFeatures {
-        aidl true
-    }
-
     defaultConfig {
-        applicationId "com.ghostly.apk"
+        applicationId "com.kemtiz.app"
         minSdk 26
         targetSdk 35
-        versionCode 16
-        versionName "1.4.0"
+        versionCode 17
+        versionName "2.0.0"
     }
 }
 
 dependencies {
-    implementation "dev.rikka.shizuku:api:13.1.5"
-    implementation "dev.rikka.shizuku:provider:13.1.5"
 }
