@@ -126,6 +126,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: kemtiz-android-${{ github.run_number }}
+          target_commitish: kemtiz-messenger
           name: "Kemtiz Android preview #${{ github.run_number }}"
           body: |
             Kemtiz Android preview build from branch kemtiz-messenger.
