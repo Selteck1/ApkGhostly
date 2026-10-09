@@ -509,7 +509,7 @@ public class KemtizActivity extends Activity {
         TextView icon=text(initial(user.optString("display_name","K")),17,WHITE,Gravity.CENTER);icon.setBackground(bg(PURPLE,24));
         row.addView(icon,new LinearLayout.LayoutParams(dp(43),dp(43)));
         LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout ip=new LinearLayout.LayoutParams(0,-2,1);ip.leftMargin=dp(10);row.addView(info,ip);
+        LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(0,-2,1);ip.leftMargin=dp(10);row.addView(info,ip);
         info.addView(text(user.optString("display_name",""),14,WHITE,Gravity.START));
         info.addView(text("@"+user.optString("username",""),12,MUTED,Gravity.START));
         Button add=button("Добавить",true);row.addView(add,new LinearLayout.LayoutParams(dp(91),dp(43)));
