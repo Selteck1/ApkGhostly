@@ -58,6 +58,49 @@ python -m uvicorn server:app --host 127.0.0.1 --port 8000
 
 Открой в браузере на том же телефоне: `http://127.0.0.1:8000`. Для ПК нужен сервер, доступный с ПК, либо настроенный HTTPS-туннель/домен с тем же origin, добавленным в Google Cloud.
 
+## Открыть Kemtiz с ПК и других телефонов через интернет
+
+Для временного тестирования можно использовать Cloudflare Quick Tunnel. Он выдаёт HTTPS-адрес вида `https://random-words.trycloudflare.com`, не требует VPS или своего домена, но адрес временный и меняется после перезапуска. Любой, кто узнает ссылку, сможет открыть сайт, поэтому для реальных личных данных этот тестовый режим не подходит. См. [официальную документацию Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+### Один раз установить cloudflared в Termux
+
+У Cloudflare нет официального пакета Android/Termux в обычном репозитории Termux. Один из доступных способов — собрать open-source `cloudflared` из исходников. Сборка может занять несколько минут и требует свободного места:
+
+```bash
+pkg install -y golang git make
+cd "$HOME"
+git clone --depth=1 https://github.com/cloudflare/cloudflared.git cloudflared-termux-build
+cd "$HOME/cloudflared-termux-build"
+sed -i 's/linux/android/g' Makefile
+make cloudflared
+install cloudflared "$PREFIX/bin/cloudflared"
+cloudflared --version
+```
+
+### Запустить публичную тестовую ссылку
+
+Сначала останови старый локальный сервер сочетанием `CTRL+C`. Затем обнови проект и запусти готовый помощник:
+
+```bash
+cd "$HOME/KemtizProject"
+git pull --ff-only origin kemtiz-messenger
+bash "$HOME/KemtizProject/kemtiz/start-public.sh"
+```
+
+Скрипт запускает Uvicorn на `127.0.0.1:8000`, проверяет health endpoint и затем открывает туннель. Скопируй HTTPS URL, который Cloudflare выведет в Termux. Не закрывай Termux, пока нужен доступ с других устройств. `CTRL+C` завершит туннель и локальный сервер.
+
+### Подключение Google-входа на ПК
+
+Google не разрешает wildcard для `Authorized JavaScript origins`. Поэтому после запуска туннеля открой Google Cloud Console → OAuth client типа **Web application** → `Authorized JavaScript origins` и добавь точный origin с экрана Termux, например `https://random-words.trycloudflare.com` (без пути). Иначе сайт откроется, но Google Sign-In в обычном браузере не пройдёт. При каждом новом Quick Tunnel адрес может меняться — тогда origin нужно обновить. Для постоянного адреса понадобится домен и именованный Cloudflare Tunnel.
+
+### Подключить Android APK к публичному адресу
+
+На Android устройстве открой APK. На экране подключения нажми **«Адрес сервера»**, вставь полученный HTTPS URL и сохрани. В APK используй Web Client ID, а в Google Cloud оставь настроенным Android OAuth-клиент с правильными package name и SHA-1 подписи APK.
+
+### Важно
+
+Quick Tunnel предназначен для разработки/тестирования: нет гарантии бесперебойной работы, до 200 одновременных запросов в полёте; URL публичен для любого, у кого есть ссылка. Оставляй сервер доступным только во время тестов. Перед полноценным запуском нужны постоянный HTTPS-домен, дополнительные ограничения регистрации/злоупотреблений, резервные копии и проверка безопасности.
+
 ## Android
 
 Android APK получает отдельную фирменную adaptive launcher icon Kemtiz. При нажатии на кнопку Google в APK открывается системный Credential Manager, который показывает аккаунты устройства и возвращает ID-токен в тот же серверный поток. В обычном браузере используется официальный веб-компонент Google Identity Services. Обе версии используют один и тот же Web OAuth Client ID в качестве server client ID.
