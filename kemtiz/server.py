@@ -128,6 +128,8 @@ class _PostgresConnection:
 
         sql = re.sub(r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b",
                      "BIGSERIAL PRIMARY KEY", sql, flags=re.IGNORECASE)
+        # Match BIGSERIAL user/chat/message IDs with all referencing FK columns.
+        sql = re.sub(r"\bINTEGER\b", "BIGINT", sql, flags=re.IGNORECASE)
         sql = re.sub(r"\s+COLLATE\s+NOCASE\b", "", sql, flags=re.IGNORECASE)
         sql = re.sub(r"\bLIKE\b", "ILIKE", sql, flags=re.IGNORECASE)
         sql = re.sub(r"MAX\(last_read_id\s*,\s*\?\)",
