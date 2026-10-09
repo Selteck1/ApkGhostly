@@ -1,0 +1,28 @@
+name: Kemtiz backend checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "kemtiz-messenger" ]
+  pull_request:
+    branches: [ "kemtiz-messenger" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r kemtiz/requirements.txt
+      - name: Compile backend
+        run: python -m compileall -q kemtiz
+      - name: Test API flow
+        working-directory: kemtiz
+        run: python -m unittest -v test_server
