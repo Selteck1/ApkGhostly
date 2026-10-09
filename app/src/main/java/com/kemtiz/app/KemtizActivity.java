@@ -7,7 +7,6 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
-import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -16,19 +15,11 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.text.InputType;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import androidx.credentials.Credential;
-import androidx.credentials.CredentialManager;
-import androidx.credentials.CredentialManagerCallback;
-import androidx.credentials.CustomCredential;
-import androidx.credentials.GetCredentialRequest;
-import androidx.credentials.GetCredentialResponse;
-import androidx.credentials.exceptions.GetCredentialException;
-import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -50,7 +41,6 @@ import java.util.concurrent.TimeUnit;
 public class KemtizActivity extends Activity {
     private static final String API = "https://kemtiz-api.onrender.com";
     private static final String WS = "wss://kemtiz-api.onrender.com/ws";
-    private static final String GOOGLE_CLIENT_ID = "649066614178-fu0q0b09mi7iumi98ke3u435oe193vl8.apps.googleusercontent.com";
     private static final int BG = Color.rgb(10, 11, 17);
     private static final int SURFACE = Color.rgb(21, 22, 32);
     private static final int PANEL = Color.rgb(31, 30, 45);
@@ -68,8 +58,6 @@ public class KemtizActivity extends Activity {
     private SharedPreferences prefs;
     private String token = "";
     private JSONObject me;
-    private JSONObject googleProfile;
-    private String googleCredential = "";
     private JSONObject currentChat;
     private long chatId = -1;
     private String screen = "chats";
@@ -98,183 +86,202 @@ public class KemtizActivity extends Activity {
         });
     }
 
-    // Google authentication
+    // Native username/password authentication.
+    private EditText authUsername;
+    private EditText authPassword;
+    private EditText authConfirm;
+    private TextView authError;
+    private Button authSubmit;
+    private boolean registrationMode = false;
+
     private void login(String warning) {
+        showAuth(false, warning);
+    }
+
+    private void showAuth(boolean register, String warning) {
+        registrationMode = register;
         closeSocket();
+
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_VERTICAL);
-        root.setPadding(dp(23), dp(25), dp(23), dp(25));
         root.setBackground(bg(BG, 0));
 
-        TextView logo = text("✦", 36, WHITE, Gravity.CENTER);
-        logo.setTypeface(Typeface.DEFAULT_BOLD);
-        logo.setBackground(bg(PURPLE, 25));
-        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(82), dp(82));
-        logoLp.gravity = Gravity.CENTER_HORIZONTAL;
-        root.addView(logo, logoLp);
+        ScrollView authScroll = new ScrollView(this);
+        authScroll.setFillViewport(true);
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        root.addView(authScroll, scrollLp);
 
-        TextView brand = text("KEMTIZ", 29, WHITE, Gravity.CENTER);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(23), dp(24), dp(23), dp(25));
+        authScroll.addView(content, new ScrollView.LayoutParams(-1, -2));
+
+        TextView logo = text("✦", 30, WHITE, Gravity.CENTER);
+        logo.setTypeface(Typeface.DEFAULT_BOLD);
+        logo.setBackground(bg(PURPLE, 22));
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(66), dp(66));
+        logoLp.gravity = Gravity.CENTER_HORIZONTAL;
+        content.addView(logo, logoLp);
+
+        TextView brand = text("KEMTIZ", 27, WHITE, Gravity.CENTER);
         brand.setTypeface(Typeface.DEFAULT_BOLD);
         brand.setLetterSpacing(.12f);
         LinearLayout.LayoutParams brandLp = wrap();
         brandLp.gravity = Gravity.CENTER_HORIZONTAL;
-        brandLp.topMargin = dp(15);
-        root.addView(brand, brandLp);
+        brandLp.topMargin = dp(11);
+        content.addView(brand, brandLp);
+
         TextView tagline = text("ТВОЙ КРУГ. ТВОИ РАЗГОВОРЫ.", 10, ACCENT, Gravity.CENTER);
-        tagline.setLetterSpacing(.1f);
+        tagline.setLetterSpacing(.10f);
         LinearLayout.LayoutParams tagLp = wrap();
         tagLp.gravity = Gravity.CENTER_HORIZONTAL;
         tagLp.topMargin = dp(5);
-        root.addView(tagline, tagLp);
+        content.addView(tagline, tagLp);
 
-        LinearLayout intro = card();
-        LinearLayout.LayoutParams introLp = match();
-        introLp.topMargin = dp(30);
-        root.addView(intro, introLp);
-        TextView kicker = text("ТВОЙ МИР ОБЩЕНИЯ", 11, ACCENT, Gravity.START);
-        kicker.setTypeface(Typeface.DEFAULT_BOLD);
-        intro.addView(kicker);
-        TextView title = text("Ближе к своим.\nВ каждом сообщении.", 25, WHITE, Gravity.START);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        LinearLayout.LayoutParams titleLp = match();
-        titleLp.topMargin = dp(11);
-        intro.addView(title, titleLp);
-        TextView subtitle = text("Личные чаты, друзья и свои группы. Всё важное — в одном приложении.", 14, MUTED, Gravity.START);
-        LinearLayout.LayoutParams subLp = match();
-        subLp.topMargin = dp(9);
-        intro.addView(subtitle, subLp);
-        feature(intro, "✦", "Вход через Google", "Без отдельного пароля");
-        feature(intro, "◎", "Твои люди", "Поиск друзей по username");
-        feature(intro, "↗", "Нативный Android", "Не веб-страница внутри приложения");
+        TextView heading = text(register ? "Создай свой аккаунт" : "С возвращением", 25, WHITE, Gravity.START);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams headingLp = match();
+        headingLp.topMargin = dp(27);
+        content.addView(heading, headingLp);
+        TextView description = text(
+            register ? "Зарегистрируйся и начни общаться." : "Войди, чтобы продолжить общение.",
+            13, MUTED, Gravity.START);
+        content.addView(description, topMargin(match(), 5));
 
-        Button signIn = button("Продолжить с Google", true);
-        LinearLayout.LayoutParams signLp = match();
-        signLp.topMargin = dp(21);
-        root.addView(signIn, signLp);
-        signIn.setOnClickListener(v -> googleSignIn());
-        root.addView(text("Защищённый вход · Kemtiz Account", 12, MUTED, Gravity.CENTER), topMargin(match(), 12));
-        if (warning != null && !warning.trim().isEmpty()) {
-            TextView msg = text(warning, 12, Color.rgb(255, 130, 157), Gravity.CENTER);
-            root.addView(msg, topMargin(match(), 10));
+        LinearLayout form = card();
+        LinearLayout.LayoutParams formLp = match();
+        formLp.topMargin = dp(20);
+        content.addView(form, formLp);
+
+        LinearLayout modeTabs = new LinearLayout(this);
+        modeTabs.setOrientation(LinearLayout.HORIZONTAL);
+        modeTabs.setPadding(dp(4), dp(4), dp(4), dp(4));
+        modeTabs.setBackground(bg(BG, 13));
+        form.addView(modeTabs, match());
+
+        Button loginTab = button("Войти", !register);
+        Button registerTab = button("Регистрация", register);
+        modeTabs.addView(loginTab, new LinearLayout.LayoutParams(0, dp(45), 1f));
+        LinearLayout.LayoutParams regTabLp = new LinearLayout.LayoutParams(0, dp(45), 1f);
+        regTabLp.leftMargin = dp(5);
+        modeTabs.addView(registerTab, regTabLp);
+        loginTab.setOnClickListener(v -> showAuth(false, ""));
+        registerTab.setOnClickListener(v -> showAuth(true, ""));
+
+        TextView loginLabel = text("ЛОГИН", 10, ACCENT, Gravity.START);
+        loginLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        form.addView(loginLabel, topMargin(match(), 17));
+        authUsername = field("Придумай логин");
+        authUsername.setSingleLine(true);
+        authUsername.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        authUsername.setAutofillHints("username");
+        form.addView(authUsername, topMargin(match(), 7));
+
+        TextView passwordLabel = text("ПАРОЛЬ", 10, ACCENT, Gravity.START);
+        passwordLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        form.addView(passwordLabel, topMargin(match(), 14));
+        authPassword = field("Введи пароль");
+        authPassword.setSingleLine(true);
+        authPassword.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        authPassword.setAutofillHints("password");
+        form.addView(authPassword, topMargin(match(), 7));
+
+        if (register) {
+            TextView confirmLabel = text("ПОВТОРИ ПАРОЛЬ", 10, ACCENT, Gravity.START);
+            confirmLabel.setTypeface(Typeface.DEFAULT_BOLD);
+            form.addView(confirmLabel, topMargin(match(), 14));
+            authConfirm = field("Повтори пароль ещё раз");
+            authConfirm.setSingleLine(true);
+            authConfirm.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            form.addView(authConfirm, topMargin(match(), 7));
+        } else {
+            authConfirm = null;
         }
+
+        TextView help = text(
+            register ? "Логин: 3–24 символа, латиница, цифры и _. Пароль — минимум 8 символов."
+                     : "Используй логин и пароль, указанные при регистрации.",
+            11, MUTED, Gravity.START);
+        form.addView(help, topMargin(match(), 12));
+
+        authError = text(warning == null ? "" : warning, 12,
+            Color.rgb(255, 130, 157), Gravity.START);
+        authError.setVisibility(warning == null || warning.trim().isEmpty() ? View.GONE : View.VISIBLE);
+        form.addView(authError, topMargin(match(), 8));
+
+        authSubmit = button(register ? "Создать аккаунт" : "Войти в Kemtiz", true);
+        LinearLayout.LayoutParams submitLp = match();
+        submitLp.topMargin = dp(17);
+        form.addView(authSubmit, submitLp);
+        authSubmit.setOnClickListener(v -> {
+            if (registrationMode) registerWithPassword();
+            else loginWithPassword();
+        });
+
+        TextView footer = text("Данные передаются по защищённому соединению.", 11, MUTED, Gravity.CENTER);
+        content.addView(footer, topMargin(match(), 17));
         setContentView(root);
     }
 
-    private void googleSignIn() {
-        try {
-            // This is the explicit button flow. Google recommends GetSignInWithGoogleOption
-            // for a dedicated "Continue with Google" button.
-            GetSignInWithGoogleOption option =
-                new GetSignInWithGoogleOption.Builder(GOOGLE_CLIENT_ID).build();
-            GetCredentialRequest request = new GetCredentialRequest.Builder()
-                .addCredentialOption(option).build();
-            CredentialManager.create(this).getCredentialAsync(
-                this, request, new CancellationSignal(), command -> main.post(command),
-                new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
-                    @Override public void onResult(GetCredentialResponse response) {
-                        Credential cred = response.getCredential();
-                        if (cred instanceof CustomCredential &&
-                            GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(cred.getType())) {
-                            try {
-                                GoogleIdTokenCredential google = GoogleIdTokenCredential.createFrom(
-                                    ((CustomCredential) cred).getData());
-                                googleStart(google.getIdToken());
-                            } catch (Exception e) { toast("Не удалось прочитать аккаунт Google."); }
-                        } else toast("Google вернул неподдерживаемый тип аккаунта.");
-                    }
-                    @Override public void onError(GetCredentialException e) {
-                        String kind = e.getClass().getSimpleName();
-                        String detail = e.getMessage();
-                        if ("GetCredentialCancellationException".equals(kind)) {
-                            toast("Вход через Google был отменён. Нажми кнопку и выбери аккаунт.");
-                        } else if ("NoCredentialException".equals(kind)) {
-                            toast("Google не нашёл доступный аккаунт. Проверь, что аккаунт Google добавлен в Android и Google Play Services обновлены.");
-                        } else {
-                            String message = "Ошибка Google-входа (" + kind + ")";
-                            if (detail != null && !detail.trim().isEmpty()) {
-                                detail = detail.replaceAll("\\s+", " ").trim();
-                                if (detail.length() > 150) detail = detail.substring(0, 150) + "…";
-                                message += ": " + detail;
-                            }
-                            toast(message);
-                        }
-                    }
-                });
-        } catch (Exception e) {
-            toast("Не удалось открыть Google-вход. Проверь Google Play Services.");
+    private void loginWithPassword() {
+        String username = authUsername.getText().toString().trim().replace("@", "").toLowerCase(Locale.ROOT);
+        String password = authPassword.getText().toString();
+        if (!username.matches("[a-z0-9][a-z0-9_]{2,23}")) {
+            authUsername.setError("Логин: латиница, цифры и _, от 3 до 24 символов");
+            return;
         }
-    }
-
-    private void googleStart(String credential) {
-        JSONObject body = obj("credential", credential);
-        api("POST", "/api/auth/google/start", body, (data, error) -> {
+        if (password.isEmpty()) {
+            authPassword.setError("Введи пароль");
+            return;
+        }
+        hideKeyboard(authPassword);
+        authSubmit.setEnabled(false);
+        api("POST", "/api/auth/password/login", obj("username", username, "password", password), (data, error) -> {
+            authSubmit.setEnabled(true);
             if (error != null || !(data instanceof JSONObject)) {
-                login(error == null ? "Не удалось войти через Google." : error);
-                return;
+                authError.setText(error == null ? "Не удалось войти. Попробуй ещё раз." : error);
+                authError.setVisibility(View.VISIBLE);
+            } else {
+                accept((JSONObject) data);
             }
-            JSONObject result = (JSONObject) data;
-            if (result.optBoolean("needs_profile", false)) {
-                googleCredential = credential;
-                googleProfile = result.optJSONObject("profile");
-                profileSetup();
-            } else accept((JSONObject) data);
         });
     }
 
-    private void profileSetup() {
-        String email = googleProfile == null ? "" : googleProfile.optString("email", "");
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(22), dp(28), dp(22), dp(25));
-        root.setBackground(bg(BG, 0));
-        root.addView(text("✦", 32, ACCENT, Gravity.START));
-        TextView title = text("Создадим твой профиль", 25, WHITE, Gravity.START);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title, topMargin(match(), 12));
-        root.addView(text((googleProfile == null ? "Google аккаунт" : googleProfile.optString("name", "Google аккаунт")) +
-            (email.isEmpty() ? "" : "\n" + email), 13, MUTED, Gravity.START), topMargin(match(), 8));
-        EditText username = field("Username (латиница, цифры, _)");
-        username.setSingleLine(true);
-        username.setText(suggestUsername(email));
-        root.addView(username, topMargin(match(), 24));
-        EditText country = field("Страна (необязательно)");
-        country.setSingleLine(true);
-        root.addView(country, topMargin(match(), 10));
-        EditText about = field("О себе (необязательно)");
-        about.setMinLines(2);
-        about.setGravity(Gravity.TOP | Gravity.START);
-        root.addView(about, topMargin(match(), 10));
-        Button finish = button("Создать аккаунт", true);
-        root.addView(finish, topMargin(match(), 18));
-        finish.setOnClickListener(v -> {
-            String name = username.getText().toString().trim().replace("@", "").toLowerCase(Locale.ROOT);
-            if (!name.matches("[a-z0-9][a-z0-9_]{2,23}")) {
-                username.setError("3–24 символа: латиница, цифры и _");
-                return;
-            }
-            hideKeyboard(username);
-            JSONObject body = obj("credential", googleCredential, "username", name,
-                "country", country.getText().toString().trim(), "about", about.getText().toString().trim());
-            finish.setEnabled(false);
-            api("POST", "/api/auth/google/finish", body, (data, error) -> {
-                finish.setEnabled(true);
-                if (error != null || !(data instanceof JSONObject)) toast(error == null ? "Не удалось создать профиль." : error);
-                else accept((JSONObject) data);
-            });
-        });
-        setContentView(root);
-    }
+    private void registerWithPassword() {
+        String username = authUsername.getText().toString().trim().replace("@", "").toLowerCase(Locale.ROOT);
+        String password = authPassword.getText().toString();
+        String confirm = authConfirm == null ? "" : authConfirm.getText().toString();
 
-    private String suggestUsername(String email) {
-        String name = "kemtiz_user";
-        if (email != null && email.contains("@")) {
-            name = email.substring(0, email.indexOf('@')).toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9_]", "_").replaceAll("^[^a-z0-9]+", "");
+        if (!username.matches("[a-z0-9][a-z0-9_]{2,23}")) {
+            authUsername.setError("Логин: латиница, цифры и _, от 3 до 24 символов");
+            return;
         }
-        if (name.length() < 3) name = "kemtiz_user";
-        if (name.length() > 15) name = name.substring(0, 15);
-        return name + "_" + (1000 + (int)(Math.random() * 9000));
+        if (password.length() < 8) {
+            authPassword.setError("Пароль должен содержать минимум 8 символов");
+            return;
+        }
+        if (password.length() > 128) {
+            authPassword.setError("Пароль не должен быть длиннее 128 символов");
+            return;
+        }
+        if (!password.equals(confirm)) {
+            authConfirm.setError("Пароли не совпадают");
+            return;
+        }
+
+        hideKeyboard(authConfirm);
+        authSubmit.setEnabled(false);
+        api("POST", "/api/auth/password/register",
+            obj("username", username, "password", password, "display_name", username),
+            (data, error) -> {
+                authSubmit.setEnabled(true);
+                if (error != null || !(data instanceof JSONObject)) {
+                    authError.setText(error == null ? "Не удалось создать аккаунт." : error);
+                    authError.setVisibility(View.VISIBLE);
+                } else {
+                    accept((JSONObject) data);
+                }
+            });
     }
 
     private void accept(JSONObject result) {
@@ -284,8 +291,6 @@ public class KemtizActivity extends Activity {
             clearSession(); login("Сервер не вернул данные аккаунта."); return;
         }
         prefs.edit().putString("token", token).apply();
-        googleCredential = "";
-        googleProfile = null;
         screen = "chats";
         shell();
         socket();
