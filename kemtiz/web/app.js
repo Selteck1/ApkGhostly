@@ -213,26 +213,42 @@
         showToast("Этот QR-код уже истёк или использован. Обнови его на компьютере.", true);
         return;
       }
-      const deviceName = String(session.device_name || "компьютере").slice(0, 80);
-      const confirmed = window.confirm(
-        "Разрешить вход в Kemtiz на устройстве:\n\n" + deviceName +
-        "\n\nПодтверждай только если этот QR-код открыт на твоём компьютере."
-      );
-      if (!confirmed) {
-        await api("/api/auth/desktop/qr/" + encodeURIComponent(sessionId) + "/deny", {
-          method: "POST", body: {}
-        });
-        showToast("Вход на компьютер отклонён.");
-        return;
-      }
-      await api("/api/auth/desktop/qr/" + encodeURIComponent(sessionId) + "/approve", {
-        method: "POST", body: {}
-      });
-      showToast("Вход подтверждён. Вернись в Kemtiz на компьютере.");
+      state.pendingDesktopSessionId = sessionId;
+      $("desktopLoginDevice").textContent = String(session.device_name || "Kemtiz на компьютере").slice(0, 80);
+      $("desktopLoginFeedback").textContent = "";
+      $("approveDesktopLoginButton").disabled = false;
+      $("denyDesktopLoginButton").disabled = false;
+      $("desktopLoginModal").classList.remove("hidden");
     } catch (error) {
-      showToast(error.message || "Не удалось подтвердить вход на компьютере.", true);
+      showToast(error.message || "Не удалось проверить QR-код.", true);
     }
   };
+
+  async function answerDesktopLogin(approve) {
+    const sessionId = state.pendingDesktopSessionId;
+    if (!sessionId) return;
+    const approveButton = $("approveDesktopLoginButton");
+    const denyButton = $("denyDesktopLoginButton");
+    approveButton.disabled = true;
+    denyButton.disabled = true;
+    $("desktopLoginFeedback").textContent = "Отправляю ответ…";
+    try {
+      const action = approve ? "approve" : "deny";
+      await api("/api/auth/desktop/qr/" + encodeURIComponent(sessionId) + "/" + action, {
+        method: "POST", body: {}
+      });
+      $("desktopLoginModal").classList.add("hidden");
+      state.pendingDesktopSessionId = "";
+      showToast(approve ? "Вход подтверждён. Вернись в Kemtiz на компьютере." : "Вход на компьютер отклонён.");
+    } catch (error) {
+      $("desktopLoginFeedback").textContent = error.message || "Не удалось отправить ответ.";
+      approveButton.disabled = false;
+      denyButton.disabled = false;
+    }
+  }
+
+  $("approveDesktopLoginButton").addEventListener("click", () => answerDesktopLogin(true));
+  $("denyDesktopLoginButton").addEventListener("click", () => answerDesktopLogin(false));
 
   window.KemtizNativeQrError = (message) => {
     const text = String(message || "Не удалось отсканировать QR-код.");
