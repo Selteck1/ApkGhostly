@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+import httpx
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -77,6 +79,7 @@ def init_db() -> None:
           username TEXT NOT NULL COLLATE NOCASE UNIQUE,
           display_name TEXT NOT NULL,
           password_hash TEXT NOT NULL,
+          phone_number TEXT,
           created_at TEXT NOT NULL,
           last_seen_at TEXT
         );
@@ -124,7 +127,21 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id,id DESC);
         CREATE INDEX IF NOT EXISTS idx_members_user ON chat_members(user_id,chat_id);
         CREATE INDEX IF NOT EXISTS idx_requests_inbox ON friend_requests(to_id,status);
+        CREATE TABLE IF NOT EXISTS auth_codes(
+          phone_number TEXT PRIMARY KEY,
+          code_hash TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_sent_at INTEGER NOT NULL,
+          window_started_at INTEGER NOT NULL,
+          send_count INTEGER NOT NULL DEFAULT 1
+        );
         """)
+        user_columns = {row["name"] for row in c.execute("PRAGMA table_info(users)").fetchall()}
+        if "phone_number" not in user_columns:
+            c.execute("ALTER TABLE users ADD COLUMN phone_number TEXT")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_number "
+                  "ON users(phone_number) WHERE phone_number IS NOT NULL")
 
 
 @app.on_event("startup")
@@ -195,15 +212,13 @@ def auth_user(request: Request) -> dict[str, Any]:
     return public_user(row)
 
 
-class RegisterIn(BaseModel):
-    username: str = Field(min_length=3, max_length=24)
-    display_name: str = Field(min_length=1, max_length=32)
-    password: str = Field(min_length=8, max_length=128)
+class PhoneCodeRequest(BaseModel):
+    phone: str = Field(min_length=6, max_length=32)
 
 
-class LoginIn(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=128)
+class PhoneCodeVerify(BaseModel):
+    phone: str = Field(min_length=6, max_length=32)
+    code: str = Field(pattern=r"^\d{6}$")
 
 
 class FriendIn(BaseModel):
@@ -326,35 +341,181 @@ def health():
     return {"ok":True,"app":"Kemtiz","users":users,"messages":messages}
 
 
-@app.post("/api/auth/register")
-def register(body: RegisterIn):
-    username = body.username.strip().lower()
-    name = body.display_name.strip()
-    if not username.isascii() or not all(x.isalnum() or x=="_" for x in username) or not username[0].isalnum():
-        raise HTTPException(status_code=422, detail="Username: латинские буквы, цифры и _.")
-    if not name:
-        raise HTTPException(status_code=422, detail="Укажи отображаемое имя.")
-    now = utc_now()
+def normalize_phone(value: str) -> str:
+    compact = re.sub(r"[\s().-]", "", value.strip())
+    if compact.startswith("00"):
+        compact = "+" + compact[2:]
+    digits = compact[1:] if compact.startswith("+") else compact
+    if not digits.isdigit():
+        raise HTTPException(status_code=422, detail="Введи номер телефона с кодом страны, например +7 900 123-45-67.")
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
+    elif len(digits) == 10 and digits.startswith("9"):
+        digits = "7" + digits
+    if not 8 <= len(digits) <= 15 or digits.startswith("0"):
+        raise HTTPException(status_code=422, detail="Проверь номер телефона и укажи код страны.")
+    return "+" + digits
+
+
+def otp_hash(phone: str, code: str) -> str:
+    raw = f"kemtiz:sms-code:{phone}:{code}".encode("utf-8")
+    return hmac.new(SECRET, raw, hashlib.sha256).hexdigest()
+
+
+async def send_sms_code(phone: str, code: str) -> None:
+    api_id = os.environ.get("SMSRU_API_ID", "").strip()
+    if not api_id:
+        raise HTTPException(
+            status_code=503,
+            detail="SMS пока не подключены. Настрой SMSRU_API_ID в Termux — ключ SMS.RU.",
+        )
+
+    digits = phone[1:]
     try:
-        with db() as c:
-            cur = c.execute("INSERT INTO users(username,display_name,password_hash,created_at,last_seen_at) VALUES(?,?,?,?,?)",
-                (username,name,password_hash(body.password),now,now))
-            uid = int(cur.lastrowid)
-            row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail="Это имя пользователя уже занято.")
-    return {"token":token_for(uid),"user":public_user(row)}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                "https://sms.ru/sms/send",
+                data={
+                    "api_id": api_id,
+                    "to": digits,
+                    "msg": f"Kemtiz: код подтверждения {code}. Никому его не сообщай.",
+                    "json": "1",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(
+            status_code=502,
+            detail="Не удалось связаться с SMS-сервисом. Попробуй ещё раз позже.",
+        )
+
+    result = (payload.get("sms") or {}).get(digits) or {}
+    if payload.get("status") != "OK" or result.get("status") != "OK":
+        provider_message = result.get("status_text") or payload.get("status_text")
+        provider_code = result.get("status_code") or payload.get("status_code")
+        detail = provider_message or f"код {provider_code}" if provider_code else "провайдер отклонил отправку"
+        raise HTTPException(status_code=502, detail=f"SMS-сервис не отправил сообщение: {detail}.")
 
 
-@app.post("/api/auth/login")
-def login(body: LoginIn):
+@app.post("/api/auth/request-code")
+async def request_auth_code(body: PhoneCodeRequest, request: Request):
+    phone = normalize_phone(body.phone)
+    if not os.environ.get("SMSRU_API_ID", "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="SMS пока не подключены. Нужен API-ключ SMS.RU в переменной SMSRU_API_ID.",
+        )
+
+    now = int(time.time())
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    hashed = otp_hash(phone, code)
+
     with db() as c:
-        row = c.execute("SELECT * FROM users WHERE username=?", (body.username.strip().lower(),)).fetchone()
-        if row is None or not password_ok(body.password, row["password_hash"]):
-            raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль.")
-        c.execute("UPDATE users SET last_seen_at=? WHERE id=?", (utc_now(),row["id"]))
-        fresh = c.execute("SELECT * FROM users WHERE id=?", (row["id"],)).fetchone()
-    return {"token":token_for(int(row["id"])),"user":public_user(fresh)}
+        old = c.execute(
+            "SELECT last_sent_at,window_started_at,send_count FROM auth_codes WHERE phone_number=?",
+            (phone,),
+        ).fetchone()
+        if old:
+            elapsed = now - int(old["last_sent_at"])
+            if elapsed < 60:
+                wait = 60 - elapsed
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Подожди {wait} сек. перед повторной отправкой кода.",
+                )
+            window_started = int(old["window_started_at"])
+            send_count = int(old["send_count"])
+            if now - window_started < 3600:
+                if send_count >= 5:
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Для этого номера уже запрошено 5 кодов за час. Попробуй позже.",
+                    )
+                send_count += 1
+            else:
+                window_started = now
+                send_count = 1
+        else:
+            window_started = now
+            send_count = 1
+
+        c.execute(
+            """INSERT INTO auth_codes(phone_number,code_hash,expires_at,attempts,last_sent_at,window_started_at,send_count)
+               VALUES(?,?,?,0,?,?,?)
+               ON CONFLICT(phone_number) DO UPDATE SET
+                 code_hash=excluded.code_hash,
+                 expires_at=excluded.expires_at,
+                 attempts=0,
+                 last_sent_at=excluded.last_sent_at,
+                 window_started_at=excluded.window_started_at,
+                 send_count=excluded.send_count""",
+            (phone, hashed, now + 300, now, window_started, send_count),
+        )
+
+    try:
+        await send_sms_code(phone, code)
+    except HTTPException:
+        with db() as c:
+            c.execute("DELETE FROM auth_codes WHERE phone_number=? AND code_hash=?", (phone, hashed))
+        raise
+
+    return {"ok": True, "phone": phone, "message": "Код подтверждения отправлен по SMS."}
+
+
+@app.post("/api/auth/verify-code")
+def verify_auth_code(body: PhoneCodeVerify):
+    phone = normalize_phone(body.phone)
+    now = int(time.time())
+    failure: tuple[int, str] | None = None
+    fresh_user: dict[str, Any] | None = None
+    uid: int | None = None
+
+    with db() as c:
+        stored = c.execute("SELECT * FROM auth_codes WHERE phone_number=?", (phone,)).fetchone()
+        if stored is None:
+            failure = (400, "Сначала запроси код по SMS.")
+        elif int(stored["expires_at"]) <= now:
+            c.execute("DELETE FROM auth_codes WHERE phone_number=?", (phone,))
+            failure = (400, "Код истёк. Запроси новый.")
+        elif int(stored["attempts"]) >= 5:
+            c.execute("DELETE FROM auth_codes WHERE phone_number=?", (phone,))
+            failure = (429, "Слишком много попыток. Запроси новый код.")
+        elif not hmac.compare_digest(str(stored["code_hash"]), otp_hash(phone, body.code)):
+            attempts = int(stored["attempts"]) + 1
+            if attempts >= 5:
+                c.execute("DELETE FROM auth_codes WHERE phone_number=?", (phone,))
+                failure = (429, "Слишком много попыток. Запроси новый код.")
+            else:
+                c.execute("UPDATE auth_codes SET attempts=? WHERE phone_number=?", (attempts, phone))
+                failure = (400, f"Неверный код. Осталось попыток: {5 - attempts}.")
+        else:
+            c.execute("DELETE FROM auth_codes WHERE phone_number=?", (phone,))
+            row = c.execute("SELECT * FROM users WHERE phone_number=?", (phone,)).fetchone()
+            now_text = utc_now()
+            if row is None:
+                username = "kemtiz_" + secrets.token_hex(4)
+                while c.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+                    username = "kemtiz_" + secrets.token_hex(4)
+                display_name = "Пользователь " + phone[-4:]
+                cur = c.execute(
+                    """INSERT INTO users(username,display_name,password_hash,phone_number,created_at,last_seen_at)
+                       VALUES(?,?,?,?,?,?)""",
+                    (username, display_name, "otp-only", phone, now_text, now_text),
+                )
+                uid = int(cur.lastrowid)
+                row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+            else:
+                uid = int(row["id"])
+                c.execute("UPDATE users SET last_seen_at=? WHERE id=?", (now_text, uid))
+                row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+            fresh_user = public_user(row)
+
+    if failure:
+        raise HTTPException(status_code=failure[0], detail=failure[1])
+    if uid is None or fresh_user is None:
+        raise HTTPException(status_code=500, detail="Не удалось завершить вход. Попробуй снова.")
+    return {"token": token_for(uid), "user": fresh_user}
 
 
 @app.get("/api/me")
