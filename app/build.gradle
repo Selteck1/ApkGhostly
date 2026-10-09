@@ -11,7 +11,7 @@ android {
         minSdk 26
         targetSdk 35
         // Release workflow passes a monotonically increasing GitHub Actions run number.
-        versionCode (project.findProperty("versionCode") ?: "17").toInteger()
+        versionCode = (project.findProperty("versionCode") ?: "17").toString().toInteger()
         versionName "2.0.0"
     }
 
