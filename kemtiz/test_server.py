@@ -255,5 +255,49 @@ class KemtizApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+    def test_postgres_adapter_translates_sqlite_schema_and_queries(self):
+        adapter = server_module._PostgresConnection(None)
+
+        schema, needs_id = adapter._translate(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "username TEXT NOT NULL COLLATE NOCASE UNIQUE)"
+        )
+        self.assertFalse(needs_id)
+        self.assertIn("id BIGSERIAL PRIMARY KEY", schema)
+        self.assertNotIn("COLLATE NOCASE", schema)
+
+        child_schema, _ = adapter._translate(
+            "CREATE TABLE friend_requests (from_id INTEGER NOT NULL REFERENCES users(id))"
+        )
+        self.assertIn("from_id BIGINT NOT NULL REFERENCES users(id)", child_schema)
+
+        insert, needs_id = adapter._translate(
+            "INSERT OR IGNORE INTO friendships(user_low,user_high,created_at) VALUES(?,?,?)"
+        )
+        self.assertFalse(needs_id)
+        self.assertIn("INSERT INTO friendships", insert)
+        self.assertIn("VALUES(%s,%s,%s)", insert)
+        self.assertIn("ON CONFLICT DO NOTHING", insert)
+
+        query, _ = adapter._translate(
+            "SELECT * FROM users WHERE username LIKE ? ESCAPE '\\\\'"
+        )
+        self.assertIn("username ILIKE %s", query)
+
+        update, _ = adapter._translate(
+            "UPDATE chat_members SET last_read_id=MAX(last_read_id,?) WHERE chat_id=?"
+        )
+        self.assertIn("GREATEST(last_read_id,%s)", update)
+
+    def test_postgres_adapter_returns_generated_ids_for_insert_queries(self):
+        adapter = server_module._PostgresConnection(None)
+        statement, needs_id = adapter._translate(
+            "INSERT INTO messages(chat_id,sender_id,body,created_at) VALUES(?,?,?,?)"
+        )
+        self.assertTrue(needs_id)
+        self.assertTrue(statement.endswith("RETURNING id"))
+        self.assertIn("VALUES(%s,%s,%s,%s)", statement)
+
+
 if __name__ == "__main__":
     unittest.main()
