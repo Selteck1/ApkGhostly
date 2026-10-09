@@ -27,7 +27,7 @@ import androidx.credentials.CustomCredential;
 import androidx.credentials.GetCredentialRequest;
 import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialException;
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -163,11 +163,10 @@ public class KemtizActivity extends Activity {
 
     private void googleSignIn() {
         try {
-            GetGoogleIdOption option = new GetGoogleIdOption.Builder()
-                .setServerClientId(GOOGLE_CLIENT_ID)
-                .setFilterByAuthorizedAccounts(false)
-                .setAutoSelectEnabled(false)
-                .build();
+            // This is the explicit button flow. Google recommends GetSignInWithGoogleOption
+            // for a dedicated "Continue with Google" button.
+            GetSignInWithGoogleOption option =
+                new GetSignInWithGoogleOption.Builder(GOOGLE_CLIENT_ID).build();
             GetCredentialRequest request = new GetCredentialRequest.Builder()
                 .addCredentialOption(option).build();
             CredentialManager.create(this).getCredentialAsync(
@@ -185,9 +184,21 @@ public class KemtizActivity extends Activity {
                         } else toast("Google вернул неподдерживаемый тип аккаунта.");
                     }
                     @Override public void onError(GetCredentialException e) {
-                        String message = e.getMessage();
-                        if (message != null && message.toLowerCase(Locale.ROOT).contains("cancel")) return;
-                        toast("Не удалось войти через Google. Попробуй ещё раз.");
+                        String kind = e.getClass().getSimpleName();
+                        String detail = e.getMessage();
+                        if ("GetCredentialCancellationException".equals(kind)) {
+                            toast("Вход через Google был отменён. Нажми кнопку и выбери аккаунт.");
+                        } else if ("NoCredentialException".equals(kind)) {
+                            toast("Google не нашёл доступный аккаунт. Проверь, что аккаунт Google добавлен в Android и Google Play Services обновлены.");
+                        } else {
+                            String message = "Ошибка Google-входа (" + kind + ")";
+                            if (detail != null && !detail.trim().isEmpty()) {
+                                detail = detail.replaceAll("\\s+", " ").trim();
+                                if (detail.length() > 150) detail = detail.substring(0, 150) + "…";
+                                message += ": " + detail;
+                            }
+                            toast(message);
+                        }
                     }
                 });
         } catch (Exception e) {
