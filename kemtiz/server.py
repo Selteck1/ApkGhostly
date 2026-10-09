@@ -390,10 +390,13 @@ async def request_friend(body: FriendIn, user=Depends(auth_user)):
         reverse = c.execute("SELECT id FROM friend_requests WHERE from_id=? AND to_id=? AND status='pending'",(tid,uid)).fetchone()
         if reverse:
             raise HTTPException(status_code=409, detail="Этот пользователь уже отправил тебе заявку.")
-        old = c.execute("SELECT id FROM friend_requests WHERE from_id=? AND to_id=? AND status='pending'",(uid,tid)).fetchone()
-        if old:
+        old = c.execute("SELECT id,status FROM friend_requests WHERE from_id=? AND to_id=?",(uid,tid)).fetchone()
+        if old and old["status"] == "pending":
             raise HTTPException(status_code=409, detail="Заявка уже отправлена.")
-        c.execute("INSERT INTO friend_requests(from_id,to_id,status,created_at) VALUES(?,?,'pending',?)",(uid,tid,utc_now()))
+        if old:
+            c.execute("UPDATE friend_requests SET status='pending',created_at=? WHERE id=?",(utc_now(),old["id"]))
+        else:
+            c.execute("INSERT INTO friend_requests(from_id,to_id,status,created_at) VALUES(?,?,'pending',?)",(uid,tid,utc_now()))
     await live.send_user(tid, {"type":"friend_request"})
     return {"ok":True,"message":"Заявка отправлена."}
 
