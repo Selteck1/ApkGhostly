@@ -169,6 +169,9 @@ button:disabled{cursor:default;opacity:.55}
 .chat-row-top strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-time{font-size:9px;color:#7d7b8d;flex:0 0 auto}
 .chat-preview{font-size:10px;color:#8f8d9e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.connect-pc-row{padding:0 15px 12px}
+.connect-pc-row .button{min-height:40px;border:1px solid rgba(169,140,255,.25);background:linear-gradient(120deg,rgba(169,140,255,.14),rgba(65,111,139,.12));color:#d8caff;font-size:12px;font-weight:700}
+.connect-pc-row .button:hover{border-color:rgba(169,140,255,.55);background:rgba(169,140,255,.2)}
 .sidebar-bottom{height:43px;border-top:1px solid var(--line);padding:0 16px;display:flex;align-items:center;gap:9px;font-size:10px;color:#656577;flex:0 0 auto}
 .brand-mini-mark{width:21px;height:21px;display:grid;place-items:center;border-radius:7px;background:#2c2441;color:#c9b7ff;font-weight:900}
 .connection-state{margin-left:auto;color:#e3ae6c;font-size:12px}
