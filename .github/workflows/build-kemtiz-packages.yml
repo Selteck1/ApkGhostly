@@ -4,12 +4,17 @@ on:
   push:
     branches: ["kemtiz-messenger"]
     paths:
+      - "README.md"
+      - "render.yaml"
+      - "kemtiz/DEPLOY.md"
       - "kemtiz/desktop/**"
       - "kemtiz/server.py"
       - "kemtiz/requirements.txt"
       - "kemtiz/web/**"
       - "app/src/main/java/com/kemtiz/app/KemtizActivity.java"
       - "app/src/main/res/xml/network_security_config.xml"
+      - "app/src/main/res/drawable/ic_kemtiz_foreground.xml"
+      - "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
       - "assets/ghostly_intro.mp4.b64"
       - ".github/workflows/build-kemtiz-packages.yml"
   workflow_dispatch:
@@ -53,12 +58,8 @@ jobs:
           --name Kemtiz
           --icon kemtiz/desktop/kemtiz.ico
           --paths kemtiz
-          --add-data "kemtiz/server.py;."
-          --add-data "kemtiz/web;web"
           --collect-all PySide6
           --collect-all shiboken6
-          --collect-submodules uvicorn
-          --hidden-import server
           kemtiz/desktop/launcher.py
 
       - name: Include desktop instructions
