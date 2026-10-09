@@ -167,7 +167,6 @@ class OAuthWorker(QThread):
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
                     self.wfile.write(page)
-                    threading.Thread(target=self.server.shutdown, daemon=True).start()
 
                 def log_message(self, *_args):
                     return
