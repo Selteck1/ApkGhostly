@@ -70,7 +70,11 @@ jobs:
         run: |
           KEYSTORE="$HOME/.android/debug.keystore"
           test -s "$KEYSTORE"
-          keytool -list -v -storetype JKS -keystore "$KEYSTORE" -storepass android -alias androiddebugkey | grep -E "SHA1:|SHA-1:"
+          KEY_INFO="$(keytool -list -v -storetype JKS -keystore "$KEYSTORE" -storepass android -alias androiddebugkey)"
+          printf "%s\n" "$KEY_INFO" | grep -E "SHA1:|SHA-1:"
+          KEY_SHA1="$(printf "%s\n" "$KEY_INFO" | awk '/SHA1:/{gsub(":", "", $2); print tolower($2); exit}')"
+          test -n "$KEY_SHA1"
+          printf "%s\n" "$KEY_SHA1" > android-keystore-sha1.txt
           KEMTIZ_STABLE_DEBUG_KEYSTORE="$KEYSTORE" gradle --no-daemon assembleDebug
 
       - name: Print Android OAuth SHA-1 fingerprint
@@ -85,6 +89,13 @@ jobs:
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee android-signature.txt
           SHA1="$(awk '/certificate SHA-1 digest:/{print $NF; exit}' android-signature.txt)"
           test -n "$SHA1"
+          EXPECTED_SHA1="$(cat android-keystore-sha1.txt)"
+          if [ "$SHA1" != "$EXPECTED_SHA1" ]; then
+            echo "APK signing fingerprint does not match the restored CI keystore." >&2
+            echo "Keystore: $EXPECTED_SHA1" >&2
+            echo "APK:      $SHA1" >&2
+            exit 1
+          fi
           SHA1_COLON="$(printf '%s' "$SHA1" | sed 's/../&:/g; s/:$//' | tr '[:lower:]' '[:upper:]')"
           printf 'Android package: com.kemtiz.app\nSHA-1 for Google Cloud: %s\nRaw SHA-1: %s\n' "$SHA1_COLON" "$SHA1" | tee Android-OAuth-SHA1.txt
           {
