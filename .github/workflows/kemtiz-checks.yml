@@ -23,6 +23,8 @@ jobs:
           pip install -r kemtiz/requirements.txt
       - name: Compile backend
         run: python -m compileall -q kemtiz
+      - name: Check frontend JavaScript syntax
+        run: node --check kemtiz/web/app.js
       - name: Test API flow
         working-directory: kemtiz
         run: python -m unittest -v test_server
