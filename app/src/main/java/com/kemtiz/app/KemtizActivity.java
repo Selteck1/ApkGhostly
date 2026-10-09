@@ -1,6 +1,20 @@
 package com.kemtiz.app;
 
 import android.app.Activity;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.CancellationSignal;
+import android.webkit.JavascriptInterface;
+import androidx.credentials.Credential;
+import androidx.credentials.CredentialManager;
+import androidx.credentials.CredentialManagerCallback;
+import androidx.credentials.CustomCredential;
+import androidx.credentials.GetCredentialRequest;
+import androidx.credentials.GetCredentialResponse;
+import androidx.credentials.exceptions.GetCredentialException;
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
+import org.json.JSONObject;
 import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -65,6 +79,7 @@ public class KemtizActivity extends Activity {
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         webView.setWebChromeClient(new WebChromeClient());
+        webView.addJavascriptInterface(new NativeGoogleBridge(), "KemtizNativeGoogle");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
@@ -141,6 +156,91 @@ public class KemtizActivity extends Activity {
         root.addView(errorPanel, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
+    }
+
+    private final class NativeGoogleBridge {
+        @JavascriptInterface
+        public void signIn(String clientId) {
+            runOnUiThread(() -> beginGoogleSignIn(clientId));
+        }
+    }
+
+    private void beginGoogleSignIn(String clientId) {
+        if (clientId == null || clientId.trim().isEmpty()) {
+            sendGoogleError("Google-вход не настроен. Добавь OAuth Client ID в настройки сервера.");
+            return;
+        }
+
+        try {
+            GetGoogleIdOption googleOption = new GetGoogleIdOption.Builder()
+                .setServerClientId(clientId.trim())
+                .setFilterByAuthorizedAccounts(false)
+                .setAutoSelectEnabled(false)
+                .build();
+            GetCredentialRequest request = new GetCredentialRequest.Builder()
+                .addCredentialOption(googleOption)
+                .build();
+            CredentialManager manager = CredentialManager.create(this);
+            manager.getCredentialAsync(
+                this,
+                request,
+                new CancellationSignal(),
+                command -> runOnUiThread(command),
+                new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                    @Override
+                    public void onResult(GetCredentialResponse response) {
+                        Credential credential = response.getCredential();
+                        if (credential instanceof CustomCredential
+                            && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
+                            try {
+                                GoogleIdTokenCredential googleCredential =
+                                    GoogleIdTokenCredential.createFrom(((CustomCredential) credential).getData());
+                                sendGoogleCredential(googleCredential.getIdToken());
+                            } catch (Exception error) {
+                                sendGoogleError("Не удалось прочитать Google-аккаунт. Попробуй ещё раз.");
+                            }
+                        } else {
+                            sendGoogleError("Google вернул неподдерживаемый тип аккаунта.");
+                        }
+                    }
+
+                    @Override
+                    public void onError(GetCredentialException error) {
+                        sendGoogleError("Вход через Google отменён или не завершён. Попробуй выбрать аккаунт ещё раз.");
+                    }
+                }
+            );
+        } catch (Exception error) {
+            sendGoogleError("Не удалось открыть выбор Google-аккаунта. Проверь Google Play Services.");
+        }
+    }
+
+    private void sendGoogleCredential(String idToken) {
+        if (webView == null || idToken == null || idToken.isEmpty()) {
+            sendGoogleError("Google не вернул токен аккаунта.");
+            return;
+        }
+        String quoted = JSONObject.quote(idToken);
+        runOnUiThread(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                    "window.KemtizNativeGoogleCredential && window.KemtizNativeGoogleCredential(" + quoted + ");",
+                    null
+                );
+            }
+        });
+    }
+
+    private void sendGoogleError(String message) {
+        String quoted = JSONObject.quote(message == null ? "Не удалось войти через Google." : message);
+        runOnUiThread(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                    "window.KemtizNativeGoogleError && window.KemtizNativeGoogleError(" + quoted + ");",
+                    null
+                );
+            }
+        });
     }
 
     private String serverUrl() {
