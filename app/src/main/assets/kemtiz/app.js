@@ -280,6 +280,30 @@
 
   $("logoutButton").addEventListener("click", () => logout(true));
 
+
+  const menuTargets = {
+    chats: $("menuChatsSection"),
+    friends: $("menuFriendsSection"),
+    requests: $("menuRequestsSection"),
+    search: $("menuSearchSection")
+  };
+  document.querySelectorAll("[data-menu-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetName = button.dataset.menuTarget;
+      const target = menuTargets[targetName];
+      if (!target) return;
+      document.body.classList.remove("chat-open");
+      document.querySelectorAll(".mobile-nav-button").forEach((item) => {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        if (active) item.setAttribute("aria-current", "page");
+        else item.removeAttribute("aria-current");
+      });
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+
   async function refreshAll() {
     await Promise.allSettled([refreshFriends(), refreshRequests(), refreshChats()]);
   }

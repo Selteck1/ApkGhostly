@@ -19,13 +19,13 @@
         <img class="brand-mark-img" src="icon.svg" alt="">
         <div>
           <div class="brand-name">KEMTIZ</div>
-          <div class="brand-tagline">ТВОИ ЛЮДИ. ТВОИ ЧАТЫ.</div>
+          <div class="brand-tagline">ТВОЙ КРУГ. ТВОИ РАЗГОВОРЫ.</div>
         </div>
       </div>
       <div class="auth-hero-copy">
-        <div class="hero-kicker"><span class="hero-kicker-dot"></span> ТВОЁ ЦИФРОВОЕ ПРОСТРАНСТВО</div>
-        <h2>Будь ближе.<br><span>Общайся свободно.</span></h2>
-        <p>Твои друзья, личные сообщения и группы — в одном удобном Android-приложении.</p>
+        <div class="hero-kicker"><span class="hero-kicker-dot"></span> ТВОЙ МИР ОБЩЕНИЯ</div>
+        <h2>Ближе к своим.<br><span>В каждом сообщении.</span></h2>
+        <p>Личные чаты, друзья и свои группы. Всё важное — в одном красивом приложении.</p>
       </div>
       <div class="auth-feature-list">
         <div class="auth-feature"><span class="feature-glyph">✦</span><div><strong>Один аккаунт</strong><span>Вход через Google без нового пароля</span></div></div>
@@ -110,20 +110,20 @@
       </div>
 
       <div class="sidebar-scroll">
-        <div class="section-heading"><span>ПОИСК ЛЮДЕЙ</span><span class="section-icon">⌕</span></div>
+        <div id="menuSearchSection" class="section-heading menu-section-heading"><span>НАЙТИ ЛЮДЕЙ</span><span class="section-icon">⌕</span></div>
         <form id="searchForm" class="search-row">
           <input id="searchInput" class="text-field compact" maxlength="48" placeholder="Имя или username" autocomplete="off">
           <button class="button square" type="submit" aria-label="Найти">⌕</button>
         </form>
         <div id="searchResults" class="stack-list"></div>
 
-        <div class="section-heading section-spaced"><span>ЗАЯВКИ</span><span id="requestCount" class="count-badge">0</span></div>
+        <div id="menuRequestsSection" class="section-heading section-spaced menu-section-heading"><span>ЗАЯВКИ В ДРУЗЬЯ</span><span id="requestCount" class="count-badge">0</span></div>
         <div id="requestsList" class="stack-list"></div>
 
-        <div class="section-heading section-spaced"><span>ДРУЗЬЯ</span><span id="friendsCount" class="count-badge">0</span></div>
+        <div id="menuFriendsSection" class="section-heading section-spaced menu-section-heading"><span>ТВОИ ДРУЗЬЯ</span><span id="friendsCount" class="count-badge">0</span></div>
         <div id="friendsList" class="stack-list"></div>
 
-        <div class="section-heading section-spaced"><span>МОИ ЧАТЫ</span><button id="toggleGroupButton" class="text-button" type="button">+ Группа</button></div>
+        <div id="menuChatsSection" class="section-heading section-spaced menu-section-heading"><span>ТВОИ ЧАТЫ</span><button id="toggleGroupButton" class="text-button" type="button">+ Группа</button></div>
         <form id="groupForm" class="group-form hidden">
           <label class="field-label" for="groupTitle">Название группы</label>
           <input id="groupTitle" class="text-field compact" maxlength="64" placeholder="Например, наша команда">
@@ -133,6 +133,12 @@
         <div id="chatsList" class="stack-list chats-list"></div>
       </div>
       <div class="sidebar-bottom"><span class="brand-mini-mark">K</span><span>Общение без лишнего.</span><span id="connectionState" class="connection-state">●</span></div>
+      <nav class="mobile-nav" aria-label="Главное меню">
+        <button class="mobile-nav-button active" data-menu-target="chats" type="button" aria-current="page"><span class="mobile-nav-icon">▤</span><span>Чаты</span></button>
+        <button class="mobile-nav-button" data-menu-target="friends" type="button"><span class="mobile-nav-icon">♙</span><span>Друзья</span></button>
+        <button class="mobile-nav-button" data-menu-target="requests" type="button"><span class="mobile-nav-icon">↗</span><span>Заявки</span></button>
+        <button class="mobile-nav-button" data-menu-target="search" type="button"><span class="mobile-nav-icon">⌕</span><span>Найти</span></button>
+      </nav>
     </aside>
 
     <section class="conversation">
@@ -151,7 +157,7 @@
       <div id="emptyState" class="empty-state">
         <div class="empty-orbit"><div class="empty-mark">K</div><span class="orbit-dot dot-a"></span><span class="orbit-dot dot-b"></span><span class="orbit-dot dot-c"></span></div>
         <h2>Твоё общение начинается здесь</h2>
-        <p>Найди друга, отправь заявку и начни личный диалог. На телефоне и ПК интерфейс будет один и тот же.</p>
+        <p>Найди друга, отправь заявку и начни личный диалог. Твоё общение всегда под рукой — прямо в Kemtiz.</p>
         <div class="empty-hints"><span>01 · Найди человека</span><span>02 · Добавь в друзья</span><span>03 · Напиши сообщение</span></div>
       </div>
 

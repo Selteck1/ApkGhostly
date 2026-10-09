@@ -312,3 +312,356 @@ button, input, textarea { touch-action: manipulation; }
     box-shadow: 0 0 0 3px rgba(120, 87, 217, .08), 0 12px 35px rgba(0,0,0,.14);
   }
 }
+
+
+/* Kemtiz Android 2.2 — refreshed visual system */
+:root {
+  --bg: #080A12;
+  --panel: #101321;
+  --panel-2: #171B2C;
+  --panel-3: #202540;
+  --line: rgba(176, 154, 255, .14);
+  --text: #F7F5FF;
+  --muted: #A5A6BF;
+  --muted-2: #747891;
+  --accent: #B6A0FF;
+  --accent-2: #7D5AF0;
+  --accent-soft: rgba(153, 118, 255, .15);
+}
+body {
+  background:
+    radial-gradient(ellipse at 15% -5%, rgba(104, 69, 210, .19), transparent 34%),
+    radial-gradient(ellipse at 115% 60%, rgba(51, 74, 147, .12), transparent 32%),
+    #080A12;
+}
+.ambient-one { opacity: .22; background: #794BFF; }
+.ambient-two { opacity: .12; background: #3D76D9; }
+.auth-card, .sidebar, .conversation { border-color: rgba(174, 151, 255, .15); }
+.brand-mark-img { filter: drop-shadow(0 7px 22px rgba(137, 91, 255, .38)); }
+.google-signin-button { box-shadow: 0 9px 25px rgba(0,0,0,.19); }
+.button.primary {
+  background: linear-gradient(120deg, #A58AFF, #7650E6 60%, #5E3AC6);
+  box-shadow: 0 10px 28px rgba(116, 75, 234, .25);
+}
+.profile-strip {
+  border-color: rgba(173, 147, 255, .19);
+  background: linear-gradient(112deg, rgba(124, 88, 226, .17), rgba(36, 39, 65, .58));
+}
+.empty-mark { background: linear-gradient(145deg, #B6A0FF, #6038D0); }
+.message-row.mine .message-bubble {
+  background: linear-gradient(145deg, #5B42A1, #342855);
+  border-color: rgba(198, 178, 255, .22);
+}
+@media (max-width: 760px) {
+  body { background: #080A12; }
+  .auth-shell {
+    min-height: 100dvh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0;
+    padding: calc(env(safe-area-inset-top) + 25px) 18px calc(env(safe-area-inset-bottom) + 24px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(118, 75, 245, .24), transparent 38%),
+      radial-gradient(ellipse at 0% 45%, rgba(61, 89, 181, .10), transparent 35%);
+  }
+  .auth-hero {
+    width: 100%;
+    max-width: 470px;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    text-align: center;
+  }
+  .auth-brand-lockup {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 0 auto 25px;
+    text-align: left;
+  }
+  .auth-brand-lockup .brand-mark-img {
+    width: 76px;
+    height: 76px;
+    flex-basis: 76px;
+  }
+  .auth-brand-lockup .brand-name { font-size: 25px; letter-spacing: .19em; }
+  .auth-brand-lockup .brand-tagline { font-size: 9px; letter-spacing: .16em; }
+  .auth-hero-copy { max-width: 390px; }
+  .hero-kicker {
+    display: inline-flex;
+    padding: 8px 12px;
+    border: 1px solid rgba(180, 154, 255, .20);
+    background: rgba(120, 87, 217, .10);
+    border-radius: 100px;
+    font-size: 9px;
+    letter-spacing: .12em;
+  }
+  .hero-kicker-dot { flex: 0 0 7px; }
+  .auth-hero-copy h2 {
+    margin: 19px 0 10px;
+    font-size: clamp(30px, 8.8vw, 37px);
+    line-height: 1.09;
+    letter-spacing: -.055em;
+    font-weight: 820;
+  }
+  .auth-hero-copy h2 span {
+    background: linear-gradient(90deg, #D9CCFF, #A58BFF 58%, #8E9BFF);
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
+  .auth-hero-copy p {
+    max-width: 330px;
+    margin: 0 auto;
+    color: #A7A7C0;
+    font-size: 13px;
+    line-height: 1.65;
+  }
+  .auth-feature-list {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-self: stretch;
+    gap: 8px;
+    margin: 22px 0 0;
+    width: 100%;
+  }
+  .auth-feature {
+    min-width: 0;
+    min-height: 91px;
+    padding: 11px 6px 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 7px;
+    text-align: center;
+    border: 1px solid rgba(173, 150, 255, .14);
+    border-radius: 16px;
+    background: linear-gradient(150deg, rgba(31, 29, 54, .82), rgba(16, 18, 31, .78));
+  }
+  .feature-glyph {
+    width: 31px; height: 31px; flex: 0 0 31px;
+    border-radius: 10px;
+    font-size: 15px;
+    border-color: rgba(183, 157, 255, .23);
+    background: linear-gradient(145deg, rgba(157, 122, 255, .23), rgba(67, 54, 124, .14));
+  }
+  .auth-feature div { gap: 3px; min-width: 0; }
+  .auth-feature strong { font-size: 10px; line-height: 1.25; }
+  .auth-feature div span { font-size: 9px; line-height: 1.35; color: #989AB7; }
+  .auth-hero-footer { display: none; }
+  .auth-card {
+    width: 100%;
+    max-width: 470px;
+    margin-top: 19px;
+    padding: 24px 20px 21px;
+    border: 1px solid rgba(176, 151, 255, .22);
+    border-radius: 25px;
+    background: linear-gradient(145deg, rgba(22, 24, 40, .97), rgba(12, 14, 25, .98));
+    box-shadow: 0 24px 70px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.04);
+    backdrop-filter: blur(22px);
+  }
+  .eyebrow { color: #B8A3FF; letter-spacing: .18em; font-size: 9px; }
+  .auth-card h1 { font-size: 26px; line-height: 1.15; margin: 11px 0 8px; }
+  .auth-card>.muted, #googleLoginView>.muted, .profile-form>.muted {
+    font-size: 12px; line-height: 1.65;
+  }
+  .google-button-wrap { margin-top: 22px; }
+  .google-signin-button {
+    min-height: 52px;
+    border-radius: 15px;
+    font-size: 14px;
+    box-shadow: 0 10px 22px rgba(0,0,0,.22);
+  }
+  .auth-divider { margin: 23px 0 13px; }
+  .google-privacy-note { font-size: 10px; line-height: 1.65; }
+  .auth-policy-note { margin-top: 20px; padding-top: 16px; font-size: 10px; }
+  .google-profile-summary { border-radius: 16px; background: rgba(255,255,255,.035); }
+  .text-field { min-height: 47px; border-radius: 14px; }
+  .profile-about { min-height: 82px; }
+  .full-width { min-height: 49px; border-radius: 14px; }
+  .auth-footer-note { margin-top: 17px; font-size: 10px; color: #7D809A; text-align: center; }
+  .app-shell {
+    display: block;
+    padding: 0;
+    height: 100dvh;
+    max-height: 100dvh;
+    background: #080A12;
+  }
+  .sidebar, .conversation { position: absolute; inset: 0; border: 0; border-radius: 0; min-height: 0; }
+  .sidebar {
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    background:
+      radial-gradient(ellipse at 50% -6%, rgba(110, 76, 225, .16), transparent 34%),
+      #0A0C15;
+  }
+  .conversation { z-index: 2; display: flex; background: #0B0D17; }
+  body.chat-open .sidebar { display: none; }
+  body:not(.chat-open) .conversation { display: none; }
+  .sidebar-top {
+    padding: calc(env(safe-area-inset-top) + 15px) 18px 12px;
+    background: transparent;
+    border: 0;
+  }
+  .brand-lockup.small { gap: 10px; }
+  .brand-lockup.small .brand-mark-img { width: 45px; height: 45px; flex-basis: 45px; }
+  .brand-lockup.small .brand-name { font-size: 19px; letter-spacing: .17em; }
+  .brand-lockup.small .brand-tagline { font-size: 8px; }
+  .icon-button {
+    min-width: 42px; height: 42px;
+    border-radius: 14px;
+    border-color: rgba(180, 156, 255, .17);
+    background: rgba(27, 29, 47, .85);
+    color: #C5B7F9;
+  }
+  .profile-strip {
+    margin: 5px 15px 15px;
+    padding: 13px 14px;
+    min-height: 71px;
+    border-radius: 19px;
+    gap: 12px;
+    background: linear-gradient(110deg, rgba(110, 76, 217, .19), rgba(23, 26, 44, .95));
+    border-color: rgba(177, 153, 255, .19);
+  }
+  .avatar-me { width: 45px; height: 45px; border-radius: 15px; }
+  .profile-copy strong { font-size: 13px; }
+  .profile-copy>span { font-size: 11px; color: #A4A5C1; }
+  .online-pill { padding: 6px 8px; font-size: 9px; }
+  .sidebar-scroll {
+    min-height: 0; flex: 1; overflow-y: auto;
+    padding: 0 15px 20px;
+    scroll-padding-top: 16px;
+    scroll-padding-bottom: 20px;
+    scrollbar-width: none;
+  }
+  .sidebar-scroll::-webkit-scrollbar { display: none; }
+  .menu-section-heading {
+    padding: 15px 3px 10px;
+    scroll-margin-top: 10px;
+    color: #C4C0DD;
+    font-size: 10px;
+    letter-spacing: .14em;
+  }
+  .section-spaced { margin-top: 13px; }
+  .search-row { gap: 8px; }
+  .search-row .text-field {
+    min-height: 49px;
+    padding: 12px 15px;
+    border-radius: 15px;
+    background: #121523;
+    border-color: rgba(169, 148, 255, .14);
+    font-size: 13px;
+  }
+  .button.square { width: 49px; height: 49px; flex: 0 0 49px; border-radius: 15px; }
+  .stack-list { gap: 7px; }
+  .person-row, .chat-row {
+    min-height: 66px;
+    padding: 10px 11px;
+    gap: 11px;
+    border-radius: 16px;
+    background: linear-gradient(110deg, rgba(27, 29, 47, .80), rgba(17, 19, 31, .82));
+    border: 1px solid rgba(178, 158, 255, .08);
+  }
+  .chat-row.selected {
+    background: linear-gradient(110deg, rgba(108, 78, 208, .27), rgba(32, 28, 55, .86));
+    border-color: rgba(172, 144, 255, .24);
+  }
+  .small-avatar { width: 43px; height: 43px; border-radius: 14px; font-size: 14px; }
+  .tiny-avatar { width: 36px; height: 36px; border-radius: 12px; }
+  .person-copy strong, .chat-row-top strong { font-size: 12px; }
+  .person-subtitle, .chat-preview { font-size: 11px; color: #A0A1BC; }
+  .chat-time { font-size: 10px; }
+  .count-badge { background: rgba(142, 113, 245, .18); color: #D6C9FF; border-radius: 9px; }
+  .list-empty { padding: 13px 9px; color: #81849F; line-height: 1.5; }
+  .group-form {
+    padding: 13px; border-radius: 17px;
+    background: rgba(22, 23, 39, .96); border-color: rgba(178, 158, 255, .14);
+  }
+  .sidebar-bottom { display: none; }
+  .mobile-nav {
+    position: relative;
+    z-index: 10;
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    padding: 8px 10px calc(env(safe-area-inset-bottom) + 7px);
+    border-top: 1px solid rgba(174, 151, 255, .14);
+    background: rgba(11, 13, 23, .93);
+    backdrop-filter: blur(24px);
+    box-shadow: 0 -12px 35px rgba(0,0,0,.18);
+  }
+  .mobile-nav-button {
+    min-width: 0;
+    min-height: 51px;
+    padding: 6px 3px 5px;
+    border: 1px solid transparent;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 4px;
+    color: #8E91AE;
+    background: transparent;
+    font-size: 10px;
+    font-weight: 650;
+    transition: color .15s, background .15s, border-color .15s;
+  }
+  .mobile-nav-icon { font-size: 20px; line-height: 1; }
+  .mobile-nav-button.active {
+    color: #E9E0FF;
+    background: linear-gradient(145deg, rgba(131, 96, 233, .23), rgba(91, 65, 162, .12));
+    border-color: rgba(178, 153, 255, .17);
+  }
+  .mobile-nav-button.active .mobile-nav-icon { color: #C7B5FF; text-shadow: 0 0 14px rgba(171, 136, 255, .45); }
+  .conversation-header {
+    height: calc(73px + env(safe-area-inset-top));
+    padding: calc(env(safe-area-inset-top) + 5px) 13px 0;
+    border-bottom: 1px solid rgba(173, 151, 255, .13);
+    background: linear-gradient(110deg, #17142A, #0E111E);
+    gap: 9px;
+  }
+  .mobile-back { display: grid; min-width: 39px; width: 39px; height: 39px; }
+  .chat-avatar { width: 41px; height: 41px; border-radius: 14px; }
+  .conversation-title strong { font-size: 13px; }
+  .conversation-title span { font-size: 10px; color: #A4A5C0; }
+  .empty-state { padding: 30px 22px; }
+  .empty-orbit {
+    width: 126px; height: 126px;
+    border-color: rgba(169, 139, 255, .27);
+    box-shadow: 0 0 75px rgba(126, 87, 217, .14), inset 0 0 42px rgba(126, 87, 217, .09);
+  }
+  .empty-mark {
+    width: 70px; height: 70px; border-radius: 23px; font-size: 37px;
+    box-shadow: 0 12px 40px rgba(137, 98, 230, .30);
+  }
+  .empty-state h2 { font-size: 22px; line-height: 1.18; max-width: 310px; }
+  .empty-state p { font-size: 12px; line-height: 1.75; }
+  .empty-hints { gap: 7px; margin-top: 22px; }
+  .empty-hints span { font-size: 9px; border-radius: 10px; padding: 8px; }
+  .messages-list { padding: 16px 11px; gap: 11px; }
+  .message-row { max-width: 90%; }
+  .message-bubble { border-radius: 16px 16px 16px 5px; padding: 10px 12px 8px; }
+  .message-row.mine .message-bubble { border-radius: 16px 16px 5px 16px; }
+  .message-body { font-size: 13px; line-height: 1.55; }
+  .composer {
+    margin: 0 9px calc(env(safe-area-inset-bottom) + 8px);
+    padding: 9px 10px 7px;
+    background: #141626;
+    border-color: rgba(173, 151, 255, .18);
+    border-radius: 18px;
+  }
+  .composer textarea { font-size: 14px; }
+  .composer-bottom span { max-width: 75%; line-height: 1.4; font-size: 9px; }
+  .send-button { height: 39px; width: 43px; border-radius: 13px; }
+  .toast { bottom: calc(env(safe-area-inset-bottom) + 15px); }
+}
