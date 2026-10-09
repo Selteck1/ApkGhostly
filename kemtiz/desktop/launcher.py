@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import logging
 import os
@@ -10,17 +11,17 @@ import socket
 import sys
 import threading
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import HTTPServer
 from pathlib import Path
 from typing import Any
 
 import httpx
+import qrcode
 import uvicorn
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QAction, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QDialogButtonBox, QFormLayout,
     QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QMenu,
@@ -29,7 +30,10 @@ from PySide6.QtWidgets import (
 )
 
 PORT = 8000
-API_BASE = f"http://127.0.0.1:{PORT}"
+LOCAL_API_BASE = f"http://127.0.0.1:{PORT}"
+API_BASE = LOCAL_API_BASE
+USE_REMOTE_SERVER = False
+# Public Google OAuth client ID for Android Google Sign-In validation; this is not a client secret.
 WEB_CLIENT_ID = "649066614178-f3ld6uvr9pupplnsq11k53673c2pft4o.apps.googleusercontent.com"
 
 STYLES = """
@@ -59,6 +63,7 @@ QScrollBar::handle:vertical { background:#45405e; min-height:25px; border-radius
 """
 
 def paths() -> tuple[Path, Path]:
+    global API_BASE, USE_REMOTE_SERVER
     if getattr(sys, "frozen", False):
         root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
     else:
@@ -72,12 +77,22 @@ def paths() -> tuple[Path, Path]:
         config = json.loads(cfg_file.read_text("utf-8")) if cfg_file.exists() else {}
     except Exception:
         config = {}
-    config.setdefault("google_desktop_client_id", "")
+    configured_server = str(config.get("server_url", "")).strip().rstrip("/")
+    if configured_server:
+        parsed = urllib.parse.urlsplit(configured_server)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            API_BASE = configured_server
+            USE_REMOTE_SERVER = True
+        else:
+            API_BASE = LOCAL_API_BASE
+            USE_REMOTE_SERVER = False
+    else:
+        API_BASE = LOCAL_API_BASE
+        USE_REMOTE_SERVER = False
     config.setdefault("token", "")
     os.environ["KEMTIZ_DATA_DIR"] = str(data_dir)
     os.environ["KEMTIZ_DB_PATH"] = str(data_dir / "kemtiz.sqlite3")
     os.environ["KEMTIZ_GOOGLE_CLIENT_ID"] = WEB_CLIENT_ID
-    os.environ["KEMTIZ_DESKTOP_GOOGLE_CLIENT_ID"] = str(config.get("google_desktop_client_id", "")).strip()
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     return app_dir, cfg_file
@@ -284,11 +299,12 @@ class MainWindow(QMainWindow):
         self.outgoing: list[dict[str, Any]] = []
         self.current_chat: dict[str, Any] | None = None
         self.current_messages: list[dict[str, Any]] = []
-        self.pending_credential = ""
-        self.oauth_worker: OAuthWorker | None = None
+        self.desktop_qr_session_id = ""
+        self.desktop_qr_poll_secret = ""
+        self.desktop_qr_deadline = 0.0
         self.backend: uvicorn.Server | None = None
         self.backend_thread: threading.Thread | None = None
-        self.client = httpx.Client(base_url=API_BASE, timeout=5.0)
+        self.client = httpx.Client(base_url=API_BASE, timeout=8.0)
         self.setWindowTitle("Kemtiz")
         self.setMinimumSize(1050, 700)
         self.resize(1400, 900)
@@ -302,6 +318,9 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.setInterval(5000)
         self.timer.timeout.connect(self.refresh_all)
+        self.qr_timer = QTimer(self)
+        self.qr_timer.setInterval(2200)
+        self.qr_timer.timeout.connect(self.poll_desktop_qr)
 
     def api(self, method: str, path: str, *, body: Any = None, params: dict | None = None, token: str | None = None):
         headers = {}
@@ -326,49 +345,62 @@ class MainWindow(QMainWindow):
     def build_login_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
-        outer.setContentsMargins(70, 45, 70, 45)
+        outer.setContentsMargins(40, 30, 40, 30)
         outer.addStretch(1)
         card = QFrame()
         card.setObjectName("panel")
-        card.setMaximumWidth(640)
+        card.setMaximumWidth(620)
         card.setMinimumWidth(500)
         col = QVBoxLayout(card)
-        col.setContentsMargins(42, 38, 42, 38)
-        col.setSpacing(18)
+        col.setContentsMargins(38, 30, 38, 30)
+        col.setSpacing(14)
+
         brand = QLabel("KEMTIZ")
         brand.setObjectName("brand")
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline = QLabel("ТВОИ ЛЮДИ. ТВОИ ЧАТЫ.")
         tagline.setObjectName("section")
         tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title = QLabel("Будь ближе.")
+        title = QLabel("Вход через телефон")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size:23pt;font-weight:700")
-        desc = QLabel("Отдельное настольное приложение.\nТвои чаты, друзья и группы — в одном окне.")
+        title.setStyleSheet("font-size:22pt;font-weight:750")
+        desc = QLabel("Открой Kemtiz на телефоне, нажми «Подключить компьютер»,\\nотсканируй этот QR-код и подтверди вход.")
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc.setWordWrap(True)
         desc.setObjectName("subtle")
-        self.google_button = QPushButton("  Продолжить с Google")
-        self.google_button.setObjectName("primary")
-        self.google_button.setMinimumHeight(48)
-        self.google_button.clicked.connect(self.sign_in)
-        self.settings_button = QPushButton("Настроить Google-вход")
-        self.settings_button.clicked.connect(self.configure_google)
-        self.login_status = QLabel("Для первого входа нужен OAuth Client ID типа «Desktop app».")
+
+        self.qr_image = QLabel()
+        self.qr_image.setObjectName("qrImage")
+        self.qr_image.setFixedSize(264, 264)
+        self.qr_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.qr_image.setStyleSheet("QLabel#qrImage{background:#fff;border:8px solid #fff;border-radius:14px}")
+        self.qr_image.setText("Создаю QR-код…")
+        qr_row = QHBoxLayout()
+        qr_row.addStretch(1)
+        qr_row.addWidget(self.qr_image)
+        qr_row.addStretch(1)
+
+        self.refresh_qr_button = QPushButton("↻  Обновить QR-код")
+        self.refresh_qr_button.setObjectName("primary")
+        self.refresh_qr_button.setMinimumHeight(44)
+        self.refresh_qr_button.clicked.connect(self.start_desktop_qr_login)
+        self.server_button = QPushButton("Настроить сервер")
+        self.server_button.clicked.connect(self.configure_server)
+        self.login_status = QLabel("Создаю защищённый сеанс входа…")
         self.login_status.setWordWrap(True)
         self.login_status.setObjectName("subtle")
         self.login_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        note = QLabel("Основное приложение работает нативно. Браузер открывается только на время безопасного подтверждения Google.")
+        note = QLabel("Код действует 3 минуты. Подтверждай вход только для своего компьютера.\\nПароль Google на ПК вводить не нужно.")
         note.setWordWrap(True)
         note.setObjectName("subtle")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        col.addWidget(brand)
-        col.addWidget(tagline)
-        col.addSpacing(15)
-        col.addWidget(title)
-        col.addWidget(desc)
-        col.addSpacing(12)
-        col.addWidget(self.google_button)
-        col.addWidget(self.settings_button)
+
+        for widget in (brand, tagline, title, desc):
+            col.addWidget(widget)
+        col.addSpacing(4)
+        col.addLayout(qr_row)
+        col.addWidget(self.refresh_qr_button)
+        col.addWidget(self.server_button)
         col.addWidget(self.login_status)
         col.addWidget(note)
         row = QHBoxLayout()
@@ -377,7 +409,7 @@ class MainWindow(QMainWindow):
         row.addStretch(1)
         outer.addLayout(row)
         outer.addStretch(1)
-        footer = QLabel("KEMTIZ DESKTOP  •  ДАННЫЕ ХРАНЯТСЯ ЛОКАЛЬНО НА ЭТОМ ПК")
+        footer = QLabel("KEMTIZ DESKTOP  •  ПОДТВЕРЖДЕНИЕ ВХОДА НА ТЕЛЕФОНЕ")
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         footer.setObjectName("subtle")
         outer.addWidget(footer)
@@ -516,73 +548,117 @@ class MainWindow(QMainWindow):
     def show_error(self, message: str):
         QMessageBox.warning(self, "Kemtiz", message)
 
-    def configure_google(self):
-        current = str(self.config.get("google_desktop_client_id", ""))
+    def configure_server(self):
+        current = str(self.config.get("server_url", ""))
         value, ok = QInputDialog.getText(
-            self, "Google OAuth", "OAuth Client ID типа Desktop app:", QLineEdit.EchoMode.Normal, current
+            self, "Сервер Kemtiz",
+            "Адрес общего HTTPS-сервера (оставь пустым для локального сервера на этом ПК):",
+            QLineEdit.EchoMode.Normal, current
         )
         if not ok:
             return
-        value = value.strip()
-        if not value.endswith(".apps.googleusercontent.com"):
-            self.show_error("Это не похоже на Google OAuth Client ID. Нужен идентификатор с окончанием .apps.googleusercontent.com.")
-            return
-        self.config["google_desktop_client_id"] = value
-        os.environ["KEMTIZ_DESKTOP_GOOGLE_CLIENT_ID"] = value
+        value = value.strip().rstrip("/")
+        if value:
+            parsed = urllib.parse.urlsplit(value)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                self.show_error("Укажи полный адрес, например https://kemtiz.example.com. Для публичного сервера обязательно используй HTTPS.")
+                return
+            if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1"):
+                confirm = QMessageBox.question(
+                    self, "Незащищённое соединение",
+                    "Этот адрес использует HTTP. Данные могут быть перехвачены. Продолжить?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if confirm != QMessageBox.StandardButton.Yes:
+                    return
+        self.config["server_url"] = value
         save_config(self.config_path, self.config)
-        self.login_status.setText("Google OAuth Client ID сохранён. Нажми «Продолжить с Google».")
-    
-    def sign_in(self):
-        client_id = str(self.config.get("google_desktop_client_id", "")).strip()
-        if not client_id:
-            self.configure_google()
-            client_id = str(self.config.get("google_desktop_client_id", "")).strip()
-        if not client_id:
+        QMessageBox.information(
+            self, "Kemtiz",
+            "Адрес сохранён в настройках пользователя Windows. Перезапусти Kemtiz, чтобы подключиться к выбранному серверу."
+        )
+
+    def start_desktop_qr_login(self):
+        self.qr_timer.stop()
+        self.desktop_qr_session_id = ""
+        self.desktop_qr_poll_secret = ""
+        self.desktop_qr_deadline = 0.0
+        self.qr_image.clear()
+        self.qr_image.setText("Создаю QR-код…")
+        self.refresh_qr_button.setEnabled(False)
+        self.login_status.setText("Создаю защищённый QR-сеанс…")
+        try:
+            result = self.api(
+                "POST", "/api/auth/desktop/qr/start",
+                body={"device_name": "Kemtiz на компьютере Windows"}, token=""
+            )
+            self.desktop_qr_session_id = str(result["session_id"])
+            self.desktop_qr_poll_secret = str(result["poll_secret"])
+            self.desktop_qr_deadline = time.monotonic() + int(result.get("expires_in", 180))
+            qr = qrcode.make(str(result["qr_payload"]))
+            image_buffer = io.BytesIO()
+            qr.save(image_buffer, format="PNG")
+            pixmap = QPixmap()
+            if not pixmap.loadFromData(image_buffer.getvalue(), "PNG"):
+                raise RuntimeError("Не удалось подготовить изображение QR-кода.")
+            self.qr_image.setText("")
+            self.qr_image.setPixmap(pixmap.scaled(
+                248, 248, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+            self.login_status.setText("Ожидаю подтверждение на телефоне… QR-код действует 3 минуты.")
+            self.refresh_qr_button.setEnabled(True)
+            self.qr_timer.start()
+        except Exception as exc:
+            self.qr_image.setText("QR-код недоступен")
+            self.login_status.setText(
+                "Не удалось создать QR-сеанс. Проверь подключение к серверу.\\n" + str(exc)
+            )
+            self.refresh_qr_button.setEnabled(True)
+
+    def poll_desktop_qr(self):
+        if not self.desktop_qr_session_id or not self.desktop_qr_poll_secret:
+            self.qr_timer.stop()
             return
-        self.google_button.setEnabled(False)
-        self.login_status.setText("Ожидаю подтверждение аккаунта Google…")
-        self.oauth_worker = OAuthWorker(client_id)
-        self.oauth_worker.status.connect(self.login_status.setText)
-        self.oauth_worker.token_ready.connect(self.handle_google_token)
-        self.oauth_worker.failed.connect(self.google_error)
-        self.oauth_worker.finished.connect(lambda: self.google_button.setEnabled(True))
-        self.oauth_worker.start()
-
-    def google_error(self, message: str):
-        self.login_status.setText(message)
-        self.show_error(message)
-
-    def handle_google_token(self, credential: str):
+        if time.monotonic() >= self.desktop_qr_deadline:
+            self.qr_timer.stop()
+            self.login_status.setText("QR-код истёк. Нажми «Обновить QR-код» и отсканируй новый.")
+            self.refresh_qr_button.setEnabled(True)
+            return
         try:
-            result = self.api("POST", "/api/auth/google/start", body={"credential": credential}, token="")
-            if result.get("needs_profile"):
-                profile = result.get("profile") or {}
-                self.pending_credential = credential
-                self.profile_summary.setText(f"{profile.get('name','Google аккаунт')} · {profile.get('email','')}")
-                local = str(profile.get("email", "kemtiz_user")).split("@")[0].lower()
-                suggested = "".join(ch if (ch.isascii() and (ch.isalnum() or ch == "_")) else "_" for ch in local)
-                self.profile_username.setText((suggested.strip("_") or "kemtiz_user")[:24])
-                self.stack.setCurrentWidget(self.profile_page)
+            session_id = self.desktop_qr_session_id
+            poll_secret = self.desktop_qr_poll_secret
+            result = self.api(
+                "POST", f"/api/auth/desktop/qr/{session_id}/status",
+                body={"poll_secret": poll_secret}, token=""
+            )
+            status = str(result.get("status", ""))
+            if status == "pending":
+                return
+            self.qr_timer.stop()
+            if status == "approved":
+                login = self.api(
+                    "POST", f"/api/auth/desktop/qr/{session_id}/exchange",
+                    body={"poll_secret": poll_secret}, token=""
+                )
+                self.desktop_qr_session_id = ""
+                self.desktop_qr_poll_secret = ""
+                self.accept_login(login)
+            elif status == "denied":
+                self.login_status.setText("Вход отклонён на телефоне. При необходимости создай новый QR-код.")
+                self.refresh_qr_button.setEnabled(True)
+            elif status == "expired":
+                self.login_status.setText("QR-код истёк. Нажми «Обновить QR-код».")
+                self.refresh_qr_button.setEnabled(True)
+            elif status == "consumed":
+                self.login_status.setText("Этот QR-код уже использован. Создай новый сеанс.")
+                self.refresh_qr_button.setEnabled(True)
             else:
-                self.accept_login(result)
+                self.login_status.setText("Неизвестное состояние QR-сеанса. Создай новый код.")
+                self.refresh_qr_button.setEnabled(True)
         except Exception as exc:
-            self.google_error(str(exc))
-
-    def finish_signup(self):
-        username = self.profile_username.text().strip()
-        country = self.profile_country.currentText()
-        body = {
-            "credential": self.pending_credential,
-            "username": username,
-            "country": "" if country == "Не указывать" else country,
-            "about": self.profile_about.text().strip(),
-        }
-        try:
-            result = self.api("POST", "/api/auth/google/finish", body=body, token="")
-            self.pending_credential = ""
-            self.accept_login(result)
-        except Exception as exc:
-            self.show_error(str(exc))
+            self.login_status.setText("Нет связи с сервером — пробую снова… " + str(exc))
 
     def accept_login(self, result: dict[str, Any]):
         self.token = str(result.get("token", ""))
@@ -596,12 +672,14 @@ class MainWindow(QMainWindow):
 
     def logout(self):
         self.timer.stop()
+        self.qr_timer.stop()
         self.token = ""
         self.me = None
         self.current_chat = None
         self.config["token"] = ""
         save_config(self.config_path, self.config)
         self.stack.setCurrentWidget(self.login_page)
+        QTimer.singleShot(150, self.start_desktop_qr_login)
 
     def refresh_all(self):
         if not self.token:
@@ -828,12 +906,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.timer.stop()
-        try:
-            if self.oauth_worker and self.oauth_worker.isRunning():
-                self.oauth_worker.requestInterruption()
-                self.oauth_worker.wait(1200)
-        except Exception:
-            pass
+        self.qr_timer.stop()
         try:
             self.client.close()
         except Exception:
@@ -858,16 +931,22 @@ def main():
     app.setStyle("Fusion")
 
     try:
-        backend, backend_thread = start_backend()
+        if USE_REMOTE_SERVER:
+            health = httpx.get(API_BASE + "/health", timeout=12.0)
+            if health.status_code != 200 or not health.json().get("ok"):
+                raise RuntimeError("Выбранный сервер не ответил корректно на /health.")
+            backend, backend_thread = None, None
+        else:
+            backend, backend_thread = start_backend()
     except Exception as exc:
-        QMessageBox.critical(None, "Kemtiz — запуск сервера", f"{exc}\n\nЖурнал: {app_dir / 'desktop.log'}")
+        QMessageBox.critical(None, "Kemtiz — подключение к серверу", f"{exc}\n\nПроверь адрес сервера и подключение к интернету. Журнал: {app_dir / 'desktop.log'}")
         return 1
 
     try:
         config = json.loads(config_path.read_text("utf-8")) if config_path.exists() else {}
     except Exception:
         config = {}
-    config.setdefault("google_desktop_client_id", "")
+    config.setdefault("server_url", "")
     config.setdefault("token", "")
     window = MainWindow(config, config_path)
     window.backend = backend
@@ -881,6 +960,9 @@ def main():
             window.token = ""
             window.config["token"] = ""
             save_config(config_path, window.config)
+            window.start_desktop_qr_login()
+    else:
+        window.start_desktop_qr_login()
     return app.exec()
 
 if __name__ == "__main__":
