@@ -404,6 +404,17 @@ async def verify_google_credential(credential: str) -> dict[str, Any]:
             detail="Не удалось связаться с Google для проверки аккаунта. Проверь интернет и попробуй снова.",
         )
 
+    # Web Sign-In and installed desktop applications use distinct public OAuth client IDs.
+    # Accept only explicitly configured audiences; never accept arbitrary Google token audiences.
+    accepted_audiences = {
+        value.strip()
+        for value in (
+            client_id,
+            os.environ.get("KEMTIZ_DESKTOP_GOOGLE_CLIENT_ID", "").strip(),
+        )
+        if value and value.strip()
+    }
+
     issuer = claims.get("iss")
     try:
         expires_at = int(claims.get("exp", "0"))
@@ -411,7 +422,7 @@ async def verify_google_credential(credential: str) -> dict[str, Any]:
         expires_at = 0
     verified = claims.get("email_verified") in (True, "true", "True", 1, "1")
     if (
-        claims.get("aud") != client_id
+        claims.get("aud") not in accepted_audiences
         or issuer not in ("accounts.google.com", "https://accounts.google.com")
         or expires_at <= int(time.time())
         or not claims.get("sub")
