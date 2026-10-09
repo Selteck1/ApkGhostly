@@ -23,8 +23,11 @@ jobs:
           pip install -r kemtiz/requirements.txt
       - name: Compile backend
         run: python -m compileall -q kemtiz
-      - name: Check frontend JavaScript syntax
-        run: node --check app/src/main/assets/kemtiz/app.js
+      - name: Check native Android client
+        run: |
+          ! grep -R "WebView" app/src/main/java/com/kemtiz/app
+          test ! -f app/src/main/assets/kemtiz/app.js
+          test ! -f app/src/main/assets/kemtiz/index.html
       - name: Test API flow
         working-directory: kemtiz
         run: python -m unittest -v test_server
