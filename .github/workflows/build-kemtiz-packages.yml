@@ -51,12 +51,14 @@ jobs:
           path: ~/.android/debug.keystore
           key: kemtiz-release-signing-key-v2
 
-      - name: Create stable debug signing key if missing
+      - name: Require the established Android signing key
         shell: bash
         run: |
           KEYSTORE="$HOME/.android/debug.keystore"
-          if [ ! -f "$KEYSTORE" ]; then
-            keytool -genkeypair -v -storetype JKS -keystore "$KEYSTORE" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          if [ ! -s "$KEYSTORE" ]; then
+            echo "The stable Kemtiz signing-key cache is missing. Refusing to create a new key because existing APKs would no longer accept updates." >&2
+            echo "Restore the original signing keystore before publishing another APK." >&2
+            exit 1
           fi
 
       - name: Restore embedded intro video
@@ -75,7 +77,7 @@ jobs:
           KEY_SHA1="$(printf "%s\n" "$KEY_INFO" | awk '/SHA1:/{gsub(":", "", $2); print tolower($2); exit}')"
           test -n "$KEY_SHA1"
           printf "%s\n" "$KEY_SHA1" > android-keystore-sha1.txt
-          KEMTIZ_STABLE_DEBUG_KEYSTORE="$KEYSTORE" gradle --no-daemon assembleDebug
+          KEMTIZ_STABLE_DEBUG_KEYSTORE="$KEYSTORE" gradle --no-daemon -PversionCode="${{ github.run_number }}" assembleDebug
 
       - name: Print Android OAuth SHA-1 fingerprint
         shell: bash
