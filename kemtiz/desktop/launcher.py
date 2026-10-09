@@ -263,7 +263,7 @@ class MainWindow(QMainWindow):
         title = QLabel("Вход через телефон")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size:22pt;font-weight:750")
-        desc = QLabel("Открой Kemtiz на телефоне, нажми «Подключить компьютер»,\\nотсканируй этот QR-код и подтверди вход.")
+        desc = QLabel("Открой Kemtiz на телефоне, нажми «Подключить компьютер»,\nотсканируй этот QR-код и подтверди вход.")
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc.setWordWrap(True)
         desc.setObjectName("subtle")
@@ -289,10 +289,29 @@ class MainWindow(QMainWindow):
         self.login_status.setWordWrap(True)
         self.login_status.setObjectName("subtle")
         self.login_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        note = QLabel("Код действует 3 минуты. Подтверждай вход только для своего компьютера.\\nПароль Google на ПК вводить не нужно.")
+        note = QLabel("Код действует 3 минуты. Подтверждай вход только для своего компьютера.\nПароль Google на ПК вводить не нужно.")
         note.setWordWrap(True)
         note.setObjectName("subtle")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if USE_REMOTE_SERVER:
+            endpoint_text = "Общий сервер: " + API_BASE
+        else:
+            addresses = active_lan_addresses()
+            if addresses:
+                endpoint_text = "Адрес сервера для телефона: " + "   ·   ".join(
+                    f"http://{address}:{PORT}" for address in addresses[:3]
+                )
+            else:
+                endpoint_text = "Сервер на этом ПК: http://127.0.0.1:8000"
+        self.server_address_hint = QLabel(endpoint_text)
+        self.server_address_hint.setWordWrap(True)
+        self.server_address_hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.server_address_hint.setObjectName("section")
+        self.server_address_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        connect_note = QLabel("Перед сканированием открой Kemtiz на телефоне и подключи его к этому же серверу. Для локального сервера оба устройства должны быть в одной Wi-Fi сети.")
+        connect_note.setWordWrap(True)
+        connect_note.setObjectName("subtle")
+        connect_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         for widget in (brand, tagline, title, desc):
             col.addWidget(widget)
@@ -301,6 +320,8 @@ class MainWindow(QMainWindow):
         col.addWidget(self.refresh_qr_button)
         col.addWidget(self.server_button)
         col.addWidget(self.login_status)
+        col.addWidget(self.server_address_hint)
+        col.addWidget(connect_note)
         col.addWidget(note)
         row = QHBoxLayout()
         row.addStretch(1)
@@ -512,7 +533,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.qr_image.setText("QR-код недоступен")
             self.login_status.setText(
-                "Не удалось создать QR-сеанс. Проверь подключение к серверу.\\n" + str(exc)
+                "Не удалось создать QR-сеанс. Проверь подключение к серверу.\n" + str(exc)
             )
             self.refresh_qr_button.setEnabled(True)
 
