@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c0d12">
+  <meta name="description" content="Kemtiz — мессенджер для телефона и компьютера.">
+  <link rel="manifest" href="/assets/manifest.webmanifest">
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/style.css">
+  <title>Kemtiz — мессенджер</title>
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <section id="authView" class="auth-shell">
+    <div class="brand-lockup">
+      <div class="brand-mark">K</div>
+      <div>
+        <div class="brand-name">KEMTIZ</div>
+        <div class="brand-tagline">ТВОИ ЛЮДИ. ТВОИ ЧАТЫ.</div>
+      </div>
+    </div>
+    <div class="auth-card">
+      <div class="eyebrow">ЛИЧНОЕ ПРОСТРАНСТВО</div>
+      <h1 id="authTitle">С возвращением</h1>
+      <p id="authDescription" class="muted">Войди, чтобы продолжить общение.</p>
+      <div class="auth-tabs">
+        <button id="loginTab" class="tab active" type="button">Войти</button>
+        <button id="registerTab" class="tab" type="button">Создать аккаунт</button>
+      </div>
+      <form id="authForm">
+        <label id="displayNameLabel" class="field-label hidden" for="displayName">Как тебя называть</label>
+        <input id="displayName" class="text-field hidden" name="displayName" maxlength="32" autocomplete="nickname" placeholder="Отображаемое имя">
+        <label class="field-label" for="username">Имя пользователя</label>
+        <input id="username" class="text-field" name="username" required minlength="3" maxlength="24" autocomplete="username" autocapitalize="none" placeholder="например, kemtiz_user">
+        <label class="field-label" for="password">Пароль</label>
+        <input id="password" class="text-field" name="password" required minlength="8" maxlength="128" type="password" autocomplete="current-password" placeholder="Не менее 8 символов">
+        <button id="authSubmit" class="button primary full-width" type="submit">Войти в Kemtiz <span>↗</span></button>
+        <div id="authError" class="feedback" role="status" aria-live="polite"></div>
+      </form>
+      <div class="auth-note"><span class="status-dot"></span> Первая версия · Android и ПК</div>
+    </div>
+    <div class="footer-note">Kemtiz · ранняя тестовая версия</div>
+  </section>
+
+  <main id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand-lockup small">
+          <div class="brand-mark">K</div>
+          <div>
+            <div class="brand-name">KEMTIZ</div>
+            <div class="brand-tagline">MESSENGER</div>
+          </div>
+        </div>
+        <button id="logoutButton" class="icon-button" type="button" title="Выйти" aria-label="Выйти">↗</button>
+      </div>
+
+      <div class="profile-strip">
+        <div id="avatarMe" class="avatar avatar-me">K</div>
+        <div class="profile-copy">
+          <strong id="meName">Пользователь</strong>
+          <span id="meUsername">@username</span>
+        </div>
+        <span class="online-pill"><i></i> онлайн</span>
+      </div>
+
+      <div class="sidebar-scroll">
+        <div class="section-heading"><span>ПОИСК ЛЮДЕЙ</span><span class="section-icon">⌕</span></div>
+        <form id="searchForm" class="search-row">
+          <input id="searchInput" class="text-field compact" maxlength="48" placeholder="Имя или username" autocomplete="off">
+          <button class="button square" type="submit" aria-label="Найти">⌕</button>
+        </form>
+        <div id="searchResults" class="stack-list"></div>
+
+        <div class="section-heading section-spaced"><span>ЗАЯВКИ</span><span id="requestCount" class="count-badge">0</span></div>
+        <div id="requestsList" class="stack-list"></div>
+
+        <div class="section-heading section-spaced"><span>ДРУЗЬЯ</span><span id="friendsCount" class="count-badge">0</span></div>
+        <div id="friendsList" class="stack-list"></div>
+
+        <div class="section-heading section-spaced"><span>МОИ ЧАТЫ</span><button id="toggleGroupButton" class="text-button" type="button">+ Группа</button></div>
+        <form id="groupForm" class="group-form hidden">
+          <label class="field-label" for="groupTitle">Название группы</label>
+          <input id="groupTitle" class="text-field compact" maxlength="64" placeholder="Например, наша команда">
+          <div id="groupFriends" class="checkbox-list"></div>
+          <button class="button primary full-width" type="submit">Создать группу</button>
+        </form>
+        <div id="chatsList" class="stack-list chats-list"></div>
+      </div>
+      <div class="sidebar-bottom"><span class="brand-mini-mark">K</span><span>Общение без лишнего.</span><span id="connectionState" class="connection-state">●</span></div>
+    </aside>
+
+    <section class="conversation">
+      <header class="conversation-header">
+        <button id="mobileBackButton" class="icon-button mobile-back hidden" type="button" aria-label="Назад">←</button>
+        <div id="chatAvatar" class="avatar chat-avatar">K</div>
+        <div class="conversation-title">
+          <strong id="chatTitle">Добро пожаловать в Kemtiz</strong>
+          <span id="chatSubtitle">Выбери друга или начни новый чат</span>
+        </div>
+        <div class="header-actions">
+          <span class="secure-label"><span>✦</span> KEMTIZ</span>
+        </div>
+      </header>
+
+      <div id="emptyState" class="empty-state">
+        <div class="empty-orbit"><div class="empty-mark">K</div><span class="orbit-dot dot-a"></span><span class="orbit-dot dot-b"></span><span class="orbit-dot dot-c"></span></div>
+        <h2>Твоё общение начинается здесь</h2>
+        <p>Найди друга, отправь заявку и начни личный диалог. На телефоне и ПК интерфейс будет один и тот же.</p>
+        <div class="empty-hints"><span>01 · Найди человека</span><span>02 · Добавь в друзья</span><span>03 · Напиши сообщение</span></div>
+      </div>
+
+      <div id="messagePanel" class="message-panel hidden">
+        <div id="messagesList" class="messages-list"></div>
+        <div id="typingLabel" class="typing-label hidden">печатает…</div>
+        <form id="messageForm" class="composer">
+          <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Написать сообщение…" aria-label="Сообщение"></textarea>
+          <div class="composer-bottom">
+            <span>Enter — отправить · Shift + Enter — новая строка</span>
+            <button id="sendButton" class="send-button" type="submit" aria-label="Отправить сообщение">➤</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
