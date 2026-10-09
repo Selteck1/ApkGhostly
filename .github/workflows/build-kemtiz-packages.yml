@@ -1,5 +1,9 @@
 name: Build Kemtiz Android
 
+concurrency:
+  group: kemtiz-android-release-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     branches: ["kemtiz-messenger"]
@@ -44,7 +48,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
-          key: kemtiz-debug-signing-key-v1
+          key: kemtiz-release-signing-key-v2
 
       - name: Create stable debug signing key if missing
         shell: bash
@@ -135,7 +139,7 @@ jobs:
             - On first launch, enter the shared HTTPS server URL.
             - Deploy the API and PostgreSQL database using render.yaml and kemtiz/DEPLOY.md before signing in.
             - The Android OAuth SHA-1 fingerprint is included as Android-OAuth-SHA1.txt.
-            - This workflow uses a persistent CI debug signing key so subsequent builds can update the APK.
+            - Android releases are serialized and use a dedicated cached CI debug signing key; verify the SHA-1 fingerprint for OAuth.
             - This is an early test build without end-to-end encryption or full account recovery.
           prerelease: true
           make_latest: false
