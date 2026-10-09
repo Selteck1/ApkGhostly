@@ -15,9 +15,7 @@ Neon хранит аккаунты, друзей, чаты, сообщения �
 1. Открой https://render.com/ и войди через GitHub.
 2. Выбери **New → Blueprint** и подключи репозиторий `Selteck1/ApkGhostly`, ветку `kemtiz-messenger`.
 3. Render найдёт `render.yaml` и создаст веб-сервис `kemtiz-api`.
-4. При настройке переменных укажи:
-   - `DATABASE_URL` — строку подключения из Neon;
-   - `KEMTIZ_GOOGLE_CLIENT_ID` — OAuth **Web application Client ID**, который используется для Google-входа Kemtiz.
+4. При настройке переменных укажи `DATABASE_URL` — строку подключения из Neon. Публичный OAuth Client ID Kemtiz уже прописан в `render.yaml`; отдельный секрет Google не нужен.
 5. Для `KEMTIZ_SECRET` Render создаёт случайное значение автоматически. Не меняй его после запуска: оно подписывает сессии входа.
 6. Нажми **Apply / Deploy** и дождись успешного развёртывания.
 
@@ -31,7 +29,7 @@ Render покажет публичный URL примерно такого ви�
 {"ok":true,"app":"Kemtiz","users":0,"messages":0}
 ```
 
-Если Google-вход не проходит, проверь, что в `KEMTIZ_GOOGLE_CLIENT_ID` указан именно веб-клиент, которому принадлежат ID-токены, получаемые мобильным приложением.
+Если Google-вход не проходит, проверь, что этот OAuth-клиент настроен в Google Cloud для Kemtiz и что у него разрешён нужный Web/Android OAuth flow.
 
 ## 4. Подключить телефон и компьютер
 
