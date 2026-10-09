@@ -55,7 +55,6 @@ jobs:
           --paths kemtiz
           --add-data "kemtiz/server.py;."
           --add-data "kemtiz/web;web"
-          --collect-all webview
           --collect-submodules uvicorn
           kemtiz/desktop/launcher.py
 
