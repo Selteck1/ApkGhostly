@@ -21,6 +21,7 @@ class KemtizApiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.credentials = {}
         cls.identity_counter = 0
+        cls.account_counter = 0
 
         async def fake_verify_google_credential(credential):
             identity = cls.credentials.get(credential)
@@ -58,9 +59,8 @@ class KemtizApiTests(unittest.TestCase):
 
     def create_account(self, name):
         credential, identity = self.create_identity(name)
-        username = name.lower() + "_" + str(self._testMethodName.__hash__() & 0xffff)
-        # A unique suffix makes users independent even when tests run more than once.
-        username = (username + "_" + str(self.id().__hash__() & 0xffff))[:24]
+        type(self).account_counter += 1
+        username = name.lower() + "_" + f"{type(self).account_counter:05d}"
         response = self.client.post("/api/auth/google/finish", json={
             "credential": credential,
             "username": username,
