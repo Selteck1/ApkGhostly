@@ -169,6 +169,16 @@ button:disabled{cursor:default;opacity:.55}
 .chat-row-top strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-time{font-size:9px;color:#7d7b8d;flex:0 0 auto}
 .chat-preview{font-size:10px;color:#8f8d9e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.confirm-overlay{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:22px;background:rgba(5,6,12,.78);backdrop-filter:blur(18px)}
+.confirm-card{width:min(100%,440px);padding:30px;border:1px solid rgba(169,140,255,.24);border-radius:24px;background:linear-gradient(155deg,#1a1a29,#10121b);box-shadow:0 30px 100px rgba(0,0,0,.5)}
+.confirm-mark{width:48px;height:48px;display:grid;place-items:center;margin-bottom:24px;border:1px solid rgba(169,140,255,.3);border-radius:15px;background:rgba(169,140,255,.12);color:#cfbcff;font-size:23px}
+.confirm-card h2{margin:10px 0 12px;font-size:23px;letter-spacing:-.03em}
+.confirm-copy,.confirm-warning{color:#a7a5ba;font-size:12px;line-height:1.75}
+.confirm-device{margin:15px 0;padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.035);font-size:14px;font-weight:700;overflow-wrap:anywhere}
+.confirm-warning{padding-left:12px;border-left:2px solid #e8b86a;color:#c9bda8}
+.confirm-actions{display:flex;gap:10px;margin-top:22px}
+.confirm-actions .button{flex:1;min-height:42px}
+.confirm-actions .button.primary{background:linear-gradient(135deg,#9675ff,#6953cf);color:#fff}
 .connect-pc-row{padding:0 15px 12px}
 .connect-pc-row .button{min-height:40px;border:1px solid rgba(169,140,255,.25);background:linear-gradient(120deg,rgba(169,140,255,.14),rgba(65,111,139,.12));color:#d8caff;font-size:12px;font-weight:700}
 .connect-pc-row .button:hover{border-color:rgba(169,140,255,.55);background:rgba(169,140,255,.2)}
