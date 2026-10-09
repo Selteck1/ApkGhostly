@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: kemtiz-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r kemtiz/requirements.txt
+    startCommand: cd kemtiz && uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: KEMTIZ_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: KEMTIZ_GOOGLE_CLIENT_ID
+        sync: false
