@@ -21,7 +21,7 @@ Open the repository's Actions tab → Build Kemtiz Desktop → the latest succes
 - LAN mode uses plain HTTP, without transport encryption. Use only a network you trust; do not port-forward port 8000 or share these addresses over public Wi-Fi.
 - The desktop database is stored in %APPDATA%\Kemtiz\data.
 - On first run, Windows may ask for firewall permission. Allow only on a private network.
-- Microsoft Edge or Google Chrome must be installed. The app uses a separate browser profile under `%APPDATA%\\Kemtiz\\BrowserProfile`; this keeps the application window separate from normal browser windows.
+- Microsoft Edge or Google Chrome must be installed. The app uses a separate browser profile under `%APPDATA%\Kemtiz\BrowserProfile`; this keeps the application window separate from normal browser windows.
 
 ## Build locally
 
