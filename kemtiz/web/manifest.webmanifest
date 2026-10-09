@@ -1,7 +1,7 @@
 {
   "name": "Kemtiz Messenger",
   "short_name": "Kemtiz",
-  "description": "Личные чаты и друзья",
+  "description": "Твои люди. Твои чаты. Общение на всех устройствах.",
   "lang": "ru",
   "start_url": "/",
   "scope": "/",
