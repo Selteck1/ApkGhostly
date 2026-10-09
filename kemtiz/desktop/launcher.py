@@ -1,25 +1,17 @@
 from __future__ import annotations
 
-import base64
-import hashlib
 import io
 import json
 import logging
 import os
-import secrets
-import socket
 import sys
-import threading
 import time
 import urllib.parse
-import urllib.request
-from http.server import HTTPServer
 from pathlib import Path
 from typing import Any
 
 import httpx
 import qrcode
-import uvicorn
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QPixmap
 from PySide6.QtWidgets import (
@@ -29,12 +21,8 @@ from PySide6.QtWidgets import (
     QSplitter, QStackedWidget, QTabWidget, QVBoxLayout, QWidget, QComboBox,
 )
 
-PORT = 8000
-LOCAL_API_BASE = f"http://127.0.0.1:{PORT}"
-API_BASE = LOCAL_API_BASE
+API_BASE = ""
 USE_REMOTE_SERVER = False
-# Public Google OAuth client ID for Android Google Sign-In validation; this is not a client secret.
-WEB_CLIENT_ID = "649066614178-f3ld6uvr9pupplnsq11k53673c2pft4o.apps.googleusercontent.com"
 
 STYLES = """
 QWidget { background:#0b0c12; color:#f1edf9; font-family:"Segoe UI"; font-size:10pt; }
@@ -64,13 +52,7 @@ QScrollBar::handle:vertical { background:#45405e; min-height:25px; border-radius
 
 def paths() -> tuple[Path, Path]:
     global API_BASE, USE_REMOTE_SERVER
-    if getattr(sys, "frozen", False):
-        root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
-    else:
-        root = Path(__file__).resolve().parents[1]
     app_dir = Path(os.environ.get("APPDATA", str(Path.home()))) / "Kemtiz"
-    data_dir = app_dir / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
     app_dir.mkdir(parents=True, exist_ok=True)
     cfg_file = app_dir / "config.json"
     try:
@@ -78,23 +60,17 @@ def paths() -> tuple[Path, Path]:
     except Exception:
         config = {}
     configured_server = str(config.get("server_url", "")).strip().rstrip("/")
-    if configured_server:
-        parsed = urllib.parse.urlsplit(configured_server)
-        if parsed.scheme in ("http", "https") and parsed.netloc:
-            API_BASE = configured_server
-            USE_REMOTE_SERVER = True
-        else:
-            API_BASE = LOCAL_API_BASE
-            USE_REMOTE_SERVER = False
+    parsed = urllib.parse.urlsplit(configured_server) if configured_server else None
+    valid_scheme = bool(parsed and (
+        parsed.scheme == "https"
+        or (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"))
+    ))
+    if configured_server and parsed and parsed.netloc and valid_scheme:
+        API_BASE = configured_server
+        USE_REMOTE_SERVER = True
     else:
-        API_BASE = LOCAL_API_BASE
+        API_BASE = ""
         USE_REMOTE_SERVER = False
-    config.setdefault("token", "")
-    os.environ["KEMTIZ_DATA_DIR"] = str(data_dir)
-    os.environ["KEMTIZ_DB_PATH"] = str(data_dir / "kemtiz.sqlite3")
-    os.environ["KEMTIZ_GOOGLE_CLIENT_ID"] = WEB_CLIENT_ID
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
     return app_dir, cfg_file
 
 def save_config(path: Path, config: dict[str, Any]) -> None:
@@ -102,48 +78,6 @@ def save_config(path: Path, config: dict[str, Any]) -> None:
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
-
-def active_lan_addresses() -> list[str]:
-    result: list[str] = []
-    try:
-        import psutil
-        stats = psutil.net_if_stats()
-        for interface, entries in psutil.net_if_addrs().items():
-            if interface in stats and not stats[interface].isup:
-                continue
-            for entry in entries:
-                if entry.family != socket.AF_INET:
-                    continue
-                ip = entry.address
-                if ip.startswith(("10.", "192.168.")) or (
-                    ip.startswith("172.") and 16 <= int(ip.split(".")[1]) <= 31
-                ):
-                    if not ip.startswith("127.") and ip not in result:
-                        result.append(ip)
-    except Exception:
-        pass
-    return result
-
-def start_backend() -> tuple[uvicorn.Server, threading.Thread]:
-    import server
-    cfg = uvicorn.Config(
-        server.app, host="0.0.0.0", port=PORT,
-        log_level="warning", access_log=False, log_config=None,
-    )
-    instance = uvicorn.Server(cfg)
-    thread = threading.Thread(target=instance.run, name="KemtizBackend", daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 35
-    while time.monotonic() < deadline:
-        try:
-            with urllib.request.urlopen(f"{API_BASE}/health", timeout=1.5) as response:
-                if response.status == 200:
-                    return instance, thread
-        except Exception:
-            time.sleep(0.25)
-    instance.should_exit = True
-    thread.join(timeout=5)
-    raise RuntimeError("Сервер Kemtiz не ответил на /health за 35 секунд.")
 
 class ProfileDialog(QDialog):
     def __init__(self, profile: dict[str, Any], parent=None):
@@ -201,8 +135,6 @@ class MainWindow(QMainWindow):
         self.desktop_qr_session_id = ""
         self.desktop_qr_poll_secret = ""
         self.desktop_qr_deadline = 0.0
-        self.backend: uvicorn.Server | None = None
-        self.backend_thread: threading.Thread | None = None
         self.client = httpx.Client(base_url=API_BASE, timeout=8.0)
         self.setWindowTitle("Kemtiz")
         self.setMinimumSize(1050, 700)
@@ -292,22 +224,13 @@ class MainWindow(QMainWindow):
         note.setWordWrap(True)
         note.setObjectName("subtle")
         note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if USE_REMOTE_SERVER:
-            endpoint_text = "Общий сервер: " + API_BASE
-        else:
-            addresses = active_lan_addresses()
-            if addresses:
-                endpoint_text = "Адрес сервера для телефона: " + "   ·   ".join(
-                    f"http://{address}:{PORT}" for address in addresses[:3]
-                )
-            else:
-                endpoint_text = "Сервер на этом ПК: http://127.0.0.1:8000"
+        endpoint_text = "Общий сервер: " + API_BASE
         self.server_address_hint = QLabel(endpoint_text)
         self.server_address_hint.setWordWrap(True)
         self.server_address_hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.server_address_hint.setObjectName("section")
         self.server_address_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        connect_note = QLabel("Перед сканированием открой Kemtiz на телефоне и подключи его к этому же серверу. Для локального сервера оба устройства должны быть в одной Wi-Fi сети.")
+        connect_note = QLabel("Подключи Kemtiz на телефоне к этому же HTTPS-серверу. После входа отсканируй QR-код и подтверди вход на телефоне.")
         connect_note.setWordWrap(True)
         connect_note.setObjectName("subtle")
         connect_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -433,31 +356,27 @@ class MainWindow(QMainWindow):
         current = str(self.config.get("server_url", ""))
         value, ok = QInputDialog.getText(
             self, "Сервер Kemtiz",
-            "Адрес общего HTTPS-сервера (оставь пустым для локального сервера на этом ПК):",
+            "HTTPS-адрес общего сервера (например, https://kemtiz-api.onrender.com):",
             QLineEdit.EchoMode.Normal, current
         )
         if not ok:
             return
         value = value.strip().rstrip("/")
-        if value:
-            parsed = urllib.parse.urlsplit(value)
-            if parsed.scheme not in ("http", "https") or not parsed.netloc:
-                self.show_error("Укажи полный адрес, например https://kemtiz.example.com. Для публичного сервера обязательно используй HTTPS.")
-                return
-            if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1"):
-                confirm = QMessageBox.question(
-                    self, "Незащищённое соединение",
-                    "Этот адрес использует HTTP. Данные могут быть перехвачены. Продолжить?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                if confirm != QMessageBox.StandardButton.Yes:
-                    return
+        if not value:
+            self.show_error("Для входа Kemtiz нужен адрес общего сервера.")
+            return
+        parsed = urllib.parse.urlsplit(value)
+        if not parsed.netloc or not (
+            parsed.scheme == "https"
+            or (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"))
+        ):
+            self.show_error("Укажи HTTPS-адрес общего сервера, например https://kemtiz-api.onrender.com.")
+            return
         self.config["server_url"] = value
         save_config(self.config_path, self.config)
         QMessageBox.information(
             self, "Kemtiz",
-            "Адрес сохранён в настройках пользователя Windows. Перезапусти Kemtiz, чтобы подключиться к выбранному серверу."
+            "Адрес общего сервера сохранён. Перезапусти Kemtiz, чтобы подключиться к нему."
         )
 
     def start_desktop_qr_login(self):
@@ -792,13 +711,10 @@ class MainWindow(QMainWindow):
             self.client.close()
         except Exception:
             pass
-        if self.backend:
-            self.backend.should_exit = True
-        if self.backend_thread:
-            self.backend_thread.join(timeout=5)
         super().closeEvent(event)
 
 def main():
+    global API_BASE, USE_REMOTE_SERVER
     app_dir, config_path = paths()
     logging.basicConfig(
         filename=str(app_dir / "desktop.log"),
@@ -812,26 +728,64 @@ def main():
     app.setStyle("Fusion")
 
     try:
-        if USE_REMOTE_SERVER:
-            health = httpx.get(API_BASE + "/health", timeout=12.0)
-            if health.status_code != 200 or not health.json().get("ok"):
-                raise RuntimeError("Выбранный сервер не ответил корректно на /health.")
-            backend, backend_thread = None, None
-        else:
-            backend, backend_thread = start_backend()
-    except Exception as exc:
-        QMessageBox.critical(None, "Kemtiz — подключение к серверу", f"{exc}\n\nПроверь адрес сервера и подключение к интернету. Журнал: {app_dir / 'desktop.log'}")
-        return 1
-
-    try:
         config = json.loads(config_path.read_text("utf-8")) if config_path.exists() else {}
     except Exception:
         config = {}
     config.setdefault("server_url", "")
     config.setdefault("token", "")
+
+    # The installer contains only the desktop client. First-time setup asks for
+    # the shared HTTPS endpoint; the backend and persistent database live remotely.
+    while not USE_REMOTE_SERVER:
+        value, ok = QInputDialog.getText(
+            None,
+            "Подключение к Kemtiz",
+            "Введи HTTPS-адрес общего сервера Kemtiz:",
+            QLineEdit.EchoMode.Normal,
+            str(config.get("server_url", "")),
+        )
+        if not ok:
+            return 0
+        value = value.strip().rstrip("/")
+        parsed = urllib.parse.urlsplit(value)
+        if not parsed.netloc or not (
+            parsed.scheme == "https"
+            or (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1"))
+        ):
+            QMessageBox.warning(
+                None, "Kemtiz",
+                "Нужен полный HTTPS-адрес, например https://kemtiz-api.onrender.com."
+            )
+            continue
+        try:
+            health = httpx.get(value + "/health", timeout=15.0)
+            if health.status_code != 200 or not health.json().get("ok"):
+                raise RuntimeError("Сервер не прошёл проверку /health.")
+        except Exception as exc:
+            QMessageBox.warning(
+                None, "Kemtiz — сервер недоступен",
+                f"Не удалось подключиться к адресу:\\n{value}\\n\\n{exc}\\n\\n"
+                "Проверь адрес и интернет. Если Render только что запущен, подожди минуту и повтори."
+            )
+            continue
+        API_BASE = value
+        USE_REMOTE_SERVER = True
+        config["server_url"] = value
+        save_config(config_path, config)
+
+    try:
+        health = httpx.get(API_BASE + "/health", timeout=15.0)
+        if health.status_code != 200 or not health.json().get("ok"):
+            raise RuntimeError("Выбранный сервер не ответил корректно на /health.")
+    except Exception as exc:
+        QMessageBox.critical(
+            None, "Kemtiz — подключение к серверу",
+            f"{exc}\\n\\nПроверь адрес общего HTTPS-сервера и подключение к интернету. "
+            f"Журнал: {app_dir / 'desktop.log'}"
+        )
+        return 1
+
     window = MainWindow(config, config_path)
-    window.backend = backend
-    window.backend_thread = backend_thread
     window.show()
     if window.token:
         try:
