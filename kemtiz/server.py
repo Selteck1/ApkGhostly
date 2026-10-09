@@ -136,6 +136,12 @@ def init_db() -> None:
           window_started_at INTEGER NOT NULL,
           send_count INTEGER NOT NULL DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS auth_rate_limits(
+          phone_number TEXT PRIMARY KEY,
+          last_sent_at INTEGER NOT NULL,
+          window_started_at INTEGER NOT NULL,
+          send_count INTEGER NOT NULL DEFAULT 1
+        );
         """)
         user_columns = {row["name"] for row in c.execute("PRAGMA table_info(users)").fetchall()}
         if "phone_number" not in user_columns:
@@ -412,20 +418,20 @@ async def request_auth_code(body: PhoneCodeRequest, request: Request):
     hashed = otp_hash(phone, code)
 
     with db() as c:
-        old = c.execute(
-            "SELECT last_sent_at,window_started_at,send_count FROM auth_codes WHERE phone_number=?",
+        rate = c.execute(
+            "SELECT last_sent_at,window_started_at,send_count FROM auth_rate_limits WHERE phone_number=?",
             (phone,),
         ).fetchone()
-        if old:
-            elapsed = now - int(old["last_sent_at"])
+        if rate:
+            elapsed = now - int(rate["last_sent_at"])
             if elapsed < 60:
                 wait = 60 - elapsed
                 raise HTTPException(
                     status_code=429,
                     detail=f"Подожди {wait} сек. перед повторной отправкой кода.",
                 )
-            window_started = int(old["window_started_at"])
-            send_count = int(old["send_count"])
+            window_started = int(rate["window_started_at"])
+            send_count = int(rate["send_count"])
             if now - window_started < 3600:
                 if send_count >= 5:
                     raise HTTPException(
@@ -440,6 +446,15 @@ async def request_auth_code(body: PhoneCodeRequest, request: Request):
             window_started = now
             send_count = 1
 
+        c.execute(
+            """INSERT INTO auth_rate_limits(phone_number,last_sent_at,window_started_at,send_count)
+               VALUES(?,?,?,?)
+               ON CONFLICT(phone_number) DO UPDATE SET
+                 last_sent_at=excluded.last_sent_at,
+                 window_started_at=excluded.window_started_at,
+                 send_count=excluded.send_count""",
+            (phone, now, window_started, send_count),
+        )
         c.execute(
             """INSERT INTO auth_codes(phone_number,code_hash,expires_at,attempts,last_sent_at,window_started_at,send_count)
                VALUES(?,?,?,0,?,?,?)
@@ -461,7 +476,6 @@ async def request_auth_code(body: PhoneCodeRequest, request: Request):
         raise
 
     return {"ok": True, "phone": phone, "message": "Код подтверждения отправлен по SMS."}
-
 
 @app.post("/api/auth/verify-code")
 def verify_auth_code(body: PhoneCodeVerify):
