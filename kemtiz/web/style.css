@@ -26,7 +26,61 @@ button:disabled{cursor:default;opacity:.55}
 .ambient{position:fixed;pointer-events:none;filter:blur(95px);opacity:.16;z-index:-1;border-radius:50%}
 .ambient-one{width:420px;height:420px;top:-220px;left:-70px;background:#6944c9}
 .ambient-two{width:330px;height:330px;bottom:-210px;right:0;background:#2e668f}
-.auth-shell{min-height:100%;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 18px;overflow:auto}
+.auth-shell{min-height:100%;width:100%;display:grid;grid-template-columns:minmax(300px,460px) minmax(400px,480px);align-items:center;justify-content:center;gap:clamp(40px,7vw,130px);padding:clamp(28px,5vw,82px);overflow:auto;position:relative}
+.auth-hero{display:flex;flex-direction:column;align-self:center;max-width:490px;min-width:0}
+.auth-brand-lockup{margin:0 0 clamp(44px,8vh,94px);gap:16px}
+.brand-mark-img{display:block;width:52px;height:52px;flex:0 0 52px;object-fit:contain;filter:drop-shadow(0 7px 24px rgba(117,77,255,.22))}
+.brand-lockup.small .brand-mark-img{width:39px;height:39px;flex-basis:39px}
+.auth-hero-copy{max-width:480px}
+.hero-kicker{display:flex;align-items:center;gap:9px;color:#b9a5ff;font-size:10px;letter-spacing:.18em;font-weight:800}
+.hero-kicker-dot{width:7px;height:7px;border-radius:50%;background:#a88aff;box-shadow:0 0 14px #8760ff}
+.auth-hero-copy h2{margin:20px 0 17px;font-size:clamp(38px,4.1vw,62px);line-height:1.08;letter-spacing:-.055em;font-weight:780}
+.auth-hero-copy h2 span{color:#a990ff}
+.auth-hero-copy p{max-width:390px;margin:0;color:#9998ad;font-size:15px;line-height:1.85}
+.auth-feature-list{display:grid;gap:24px;margin-top:clamp(40px,7vh,80px)}
+.auth-feature{display:flex;align-items:center;gap:14px}
+.feature-glyph{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border:1px solid rgba(169,140,255,.2);border-radius:14px;background:linear-gradient(145deg,rgba(169,140,255,.13),rgba(88,65,153,.06));color:#c3b0ff;font-size:19px}
+.auth-feature div{display:grid;gap:5px}
+.auth-feature strong{font-size:13px;letter-spacing:.01em}
+.auth-feature div span{font-size:11px;color:#818095}
+.auth-hero-footer{display:flex;align-items:center;gap:10px;margin-top:clamp(42px,7vh,85px);font-size:9px;letter-spacing:.16em;color:#656477}
+.hero-footer-line{width:28px;height:1px;background:linear-gradient(90deg,#a88aff,transparent)}
+.auth-card{width:100%;padding:clamp(27px,3vw,42px);border:1px solid rgba(180,159,255,.13);border-radius:27px;background:linear-gradient(145deg,rgba(23,23,35,.98),rgba(14,15,24,.98));box-shadow:0 28px 100px rgba(0,0,0,.38),inset 0 1px rgba(255,255,255,.025);backdrop-filter:blur(24px)}
+.auth-card h1{font-size:30px;letter-spacing:-.04em;margin:13px 0 8px}
+.auth-card>.muted,#googleLoginView>.muted,.profile-form>.muted{font-size:13px;line-height:1.75}
+.google-button-wrap{margin-top:27px}
+#googleButton{width:100%;min-height:45px;display:flex;justify-content:center}
+#googleButton iframe{max-width:100%!important}
+.google-signin-button{width:100%;min-height:46px;display:flex;align-items:center;justify-content:center;gap:13px;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:#f8f8fb;color:#202124;font-size:13px;font-weight:650;transition:transform .15s,background .15s}
+.google-signin-button:hover{background:#fff}
+.google-signin-button:active{transform:scale(.99)}
+.google-signin-button svg{width:20px;height:20px}
+.auth-divider{display:flex;align-items:center;gap:12px;margin:27px 0 15px}
+.auth-divider span{height:1px;flex:1;background:rgba(255,255,255,.07)}
+.auth-divider b{font-size:8px;letter-spacing:.17em;color:#716f82;white-space:nowrap}
+.google-privacy-note{margin:0;color:#89889e;text-align:center;font-size:11px;line-height:1.8}
+.auth-policy-note{display:flex;align-items:flex-start;gap:10px;margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,.055);color:#68677c;font-size:10px;line-height:1.7}
+.policy-lock{color:#a28aff;font-size:15px;line-height:1}
+.profile-form h1{margin-top:12px}
+.google-profile-summary{display:flex;align-items:center;gap:12px;margin:23px 0 22px;padding:13px;border:1px solid rgba(255,255,255,.07);border-radius:14px;background:rgba(255,255,255,.025)}
+.google-avatar{width:42px;height:42px;display:grid;place-items:center;flex:0 0 42px;border-radius:50%;background:linear-gradient(135deg,#9a70ff,#5229b7);color:#fff;font-size:17px;font-weight:750;overflow:hidden}
+.google-avatar img,.avatar img{width:100%;height:100%;display:block;object-fit:cover;border-radius:inherit}
+.google-profile-copy{display:grid;gap:5px;min-width:0;flex:1}
+.google-profile-copy strong{font-size:12px;overflow-wrap:anywhere}
+.google-profile-copy span{font-size:10px;color:#9795ac;overflow-wrap:anywhere}
+.verified-mark{width:20px;height:20px;display:grid;place-items:center;flex:0 0 20px;border-radius:50%;background:rgba(85,214,155,.13);color:#72e6b0;font-weight:800;font-size:12px}
+.field-label{display:block;font-size:11px;color:#c7c4d2;margin:16px 0 7px;font-weight:650}
+.field-optional{margin-left:5px;color:#77768a;font-weight:500}
+.username-input-wrap{display:flex;align-items:center;gap:7px;padding-left:13px;border:1px solid rgba(255,255,255,.09);background:#0e0f16;border-radius:11px;color:#ac97ff}
+.username-input-wrap:focus-within{border-color:rgba(169,140,255,.65);box-shadow:0 0 0 3px rgba(169,140,255,.09)}
+.username-input-wrap>span{font-size:13px;font-weight:750}
+.username-input-wrap .text-field{border:0;box-shadow:none;background:transparent;padding-left:0}
+.field-hint{font-size:10px;line-height:1.6;color:#77768b;margin:7px 0 0}
+.profile-about{resize:vertical;min-height:78px;max-height:150px;line-height:1.55}
+.profile-form .full-width{margin-top:23px}
+.auth-cancel-button{display:block;width:100%;margin-top:9px;padding:10px;background:transparent;border:0;color:#9c8cce;font-size:11px;font-weight:650}
+.auth-cancel-button:hover{color:#e2d9ff}
+.auth-footer-note{grid-column:1/-1;justify-self:center;margin-top:0}
 .brand-lockup{display:flex;align-items:center;gap:13px;margin-bottom:28px}
 .brand-mark{height:47px;width:47px;display:grid;place-items:center;border-radius:15px;background:linear-gradient(145deg,#bba5ff,#7752db);color:#fff;font-size:25px;font-weight:850;box-shadow:0 8px 34px rgba(132,91,220,.23)}
 .brand-name{font-weight:850;font-size:21px;letter-spacing:.17em;line-height:1.25}
@@ -161,17 +215,43 @@ button:disabled{cursor:default;opacity:.55}
 .toast.visible{opacity:1;transform:translate(-50%,0)}
 .toast.error{border-color:rgba(255,114,141,.3);color:#ffacba}
 .mobile-back{display:none}
-@media (max-width:950px){
+@media (min-width:1450px){
+  .app-shell{grid-template-columns:370px minmax(0,1fr);padding:18px;gap:18px}
+  .sidebar-top{padding:22px 21px 14px}
+  .profile-strip{margin-left:18px;margin-right:18px}
+  .sidebar-scroll{padding:7px 18px 18px}
+  .section-heading{font-size:10px}
+  .conversation-header{height:76px;padding:0 28px}
+  .messages-list{padding:30px clamp(35px,5vw,90px);gap:16px}
+  .message-row{max-width:min(74%,760px)}
+  .message-body{font-size:14px}
+  .composer{margin:0 30px 25px;padding:14px 16px 9px}
+  .composer textarea{font-size:14px}
+}
+@media (max-width:1050px){
+  .auth-shell{grid-template-columns:minmax(0,390px) minmax(360px,440px);gap:28px;padding:34px}
+  .auth-brand-lockup{margin-bottom:50px}
+  .auth-hero-copy h2{font-size:38px}
+  .auth-feature-list{gap:18px;margin-top:42px}
+  .auth-hero-footer{margin-top:42px}
   .app-shell{grid-template-columns:300px minmax(0,1fr);padding:9px;gap:9px}
   .sidebar,.conversation{border-radius:18px}
   .secure-label{display:none}
   .conversation-header{padding:0 16px}
 }
-@media (max-width:680px){
+@media (max-width:760px){
   body{overflow:hidden}
-  .auth-shell{justify-content:flex-start;padding-top:max(35px,env(safe-area-inset-top))}
-  .auth-card{padding:24px 20px;border-radius:21px}
+  .auth-shell{display:flex;flex-direction:column;justify-content:flex-start;gap:0;padding:max(22px,env(safe-area-inset-top)) 16px 24px}
+  .auth-hero{width:100%;max-width:480px}
+  .auth-brand-lockup{margin:0 0 25px}
+  .auth-brand-lockup .brand-mark-img{width:43px;height:43px;flex-basis:43px}
+  .auth-hero-copy h2{font-size:29px;margin:12px 0 8px}
+  .auth-hero-copy p{font-size:12px;line-height:1.6}
+  .hero-kicker{font-size:8px}
+  .auth-feature-list,.auth-hero-footer{display:none}
+  .auth-card{max-width:480px;margin-top:26px;padding:24px 20px;border-radius:21px}
   .auth-card h1{font-size:25px}
+  .auth-footer-note{margin-top:16px}
   .app-shell{display:block;padding:0;height:100dvh;max-height:100dvh}
   .sidebar,.conversation{position:absolute;inset:0;border:0;border-radius:0;min-height:0}
   .sidebar{z-index:5}
