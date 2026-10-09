@@ -13,6 +13,7 @@ import androidx.credentials.GetCredentialRequest;
 import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialException;
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import org.json.JSONObject;
 import android.app.AlertDialog;
@@ -170,10 +171,24 @@ public class KemtizActivity extends Activity {
             sendGoogleError("Google-вход не настроен. Добавь OAuth Client ID в настройки сервера.");
             return;
         }
+        requestGoogleCredential(clientId.trim(), true);
+    }
 
+    private void requestGoogleCredential(String clientId, boolean useButtonFlow) {
         try {
-            GetSignInWithGoogleOption googleOption = new GetSignInWithGoogleOption.Builder(clientId.trim())
-                .build();
+            androidx.credentials.CredentialOption googleOption;
+            if (useButtonFlow) {
+                // First try the dedicated "Sign in with Google" button flow.
+                googleOption = new GetSignInWithGoogleOption.Builder(clientId).build();
+            } else {
+                // Google's recommended fallback: allow both returning and new accounts.
+                googleOption = new GetGoogleIdOption.Builder()
+                    .setServerClientId(clientId)
+                    .setFilterByAuthorizedAccounts(false)
+                    .setAutoSelectEnabled(false)
+                    .build();
+            }
+
             GetCredentialRequest request = new GetCredentialRequest.Builder()
                 .addCredentialOption(googleOption)
                 .build();
@@ -194,26 +209,36 @@ public class KemtizActivity extends Activity {
                                     GoogleIdTokenCredential.createFrom(((CustomCredential) credential).getData());
                                 sendGoogleCredential(googleCredential.getIdToken());
                             } catch (Exception error) {
-                                sendGoogleError("Не удалось прочитать Google-аккаунт. Попробуй ещё раз.");
+                                sendGoogleError("Google вернул ответ, который не удалось прочитать: "
+                                    + error.getClass().getSimpleName() + ". Попробуй ещё раз.");
                             }
                         } else {
-                            sendGoogleError("Google вернул неподдерживаемый тип аккаунта.");
+                            sendGoogleError("Google вернул неподдерживаемый тип аккаунта: "
+                                + credential.getClass().getSimpleName() + ".");
                         }
                     }
 
                     @Override
                     public void onError(GetCredentialException error) {
-                        String problem = error.getClass().getSimpleName();
-                        String reason = error.getMessage();
-                        if (reason != null && !reason.trim().isEmpty()) {
-                            problem += ": " + reason.trim();
+                        String type = error.getClass().getSimpleName();
+                        String reason = error.getMessage() == null ? "" : error.getMessage().trim();
+                        // Do not reopen the account sheet after the user explicitly cancelled it.
+                        if (type.toLowerCase(java.util.Locale.ROOT).contains("cancel")) {
+                            sendGoogleError("Вход через Google отменён. Нажми кнопку ещё раз, чтобы повторить.");
+                            return;
                         }
-                        if (problem.length() > 240) {
-                            problem = problem.substring(0, 240);
+                        if (useButtonFlow) {
+                            requestGoogleCredential(clientId, false);
+                            return;
                         }
+
+                        String details = type + (reason.isEmpty() ? "" : ": " + reason);
+                        if (details.length() > 280) details = details.substring(0, 280);
                         sendGoogleError(
-                            "Google не открыл выбор аккаунта (" + problem + "). " +
-                            "Проверь, что Google Play Services обновлены и на телефоне добавлен Google-аккаунт."
+                            "Не удалось открыть список аккаунтов Google (" + details + ").\n\n" +
+                            "Проверь: Google Play Services включены и обновлены; Google-аккаунт добавлен " +
+                            "в настройках телефона; в Google Cloud создан Android OAuth-клиент для package " +
+                            "com.kemtiz.app с SHA-1 именно установленного APK. После исправления нажми вход ещё раз."
                         );
                     }
                 }
@@ -221,13 +246,14 @@ public class KemtizActivity extends Activity {
         } catch (Exception error) {
             String problem = error.getClass().getSimpleName();
             String reason = error.getMessage();
-            if (reason != null && !reason.trim().isEmpty()) {
-                problem += ": " + reason.trim();
+            if (reason != null && !reason.trim().isEmpty()) problem += ": " + reason.trim();
+            if (problem.length() > 280) problem = problem.substring(0, 280);
+            if (useButtonFlow) {
+                requestGoogleCredential(clientId, false);
+            } else {
+                sendGoogleError("Credential Manager не смог открыть Google-вход (" + problem + "). "
+                    + "Проверь Google Play Services, Android OAuth Client ID и SHA-1 подписи APK.");
             }
-            if (problem.length() > 240) {
-                problem = problem.substring(0, 240);
-            }
-            sendGoogleError("Не удалось открыть выбор Google-аккаунта (" + problem + "). Проверь Google Play Services.");
         }
     }
 
