@@ -29,6 +29,13 @@ Base URL: `https://kemtiz-api.onrender.com`.
 
 Set a stable `KEMTIZ_SECRET` in Render for persistent sessions. SQLite defaults to `data/kemtiz.sqlite3` in this directory; ensure that directory is persistent or set `KEMTIZ_DB_PATH` / `KEMTIZ_DATA_DIR` accordingly. An ephemeral filesystem can lose accounts and chats after restart/redeploy. Make sure Render deploys this repository's `kemtiz` directory after updating the source.
 
+Render settings should be:
+- **Root Directory:** `kemtiz`
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `uvicorn server:app --host 0.0.0.0 --port $PORT`
+
+After deployment, open `/health`. The updated server reports `api_version: "0.3.0"` and `password_auth: true`. If these fields are missing, Render is still running an older backend and the Android registration route will not work.
+
 ## Tests
 
 ```sh
