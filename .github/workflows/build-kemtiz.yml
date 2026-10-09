@@ -27,6 +27,17 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: kemtiz-debug-signing-key-v1
+      - name: Create stable debug signing key if missing
+        shell: bash
+        run: |
+          KEYSTORE="$HOME/.android/debug.keystore"
+          if [ ! -f "$KEYSTORE" ]; then
+            keytool -genkeypair -v -storetype JKS \
+              -keystore "$KEYSTORE" \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
       - name: Print APK certificate SHA-1 for Google OAuth
