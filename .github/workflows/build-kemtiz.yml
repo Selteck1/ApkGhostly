@@ -1,9 +1,7 @@
-name: Build Kemtiz Android APK
+name: Manual Kemtiz Android APK check
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "kemtiz-messenger" ]
 
 jobs:
   build:
@@ -22,11 +20,11 @@ jobs:
           gradle-version: "8.13"
       - name: Prepare Android debug key directory
         run: mkdir -p "$HOME/.android"
-      - name: Restore stable Kemtiz debug signing key
+      - name: Restore stable Kemtiz release signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
-          key: kemtiz-debug-signing-key-v1
+          key: kemtiz-release-signing-key-v2
       - name: Create stable debug signing key if missing
         shell: bash
         run: |
@@ -38,8 +36,24 @@ jobs:
               -alias androiddebugkey -keyalg RSA -keysize 2048 \
               -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+      - name: Verify stable signing key and build debug APK
+        shell: bash
+        run: |
+          KEYSTORE="$HOME/.android/debug.keystore"
+          test -s "$KEYSTORE"
+          KEY_INFO="$(keytool -list -v -storetype JKS -keystore "$KEYSTORE" -storepass android -alias androiddebugkey)"
+          KEY_SHA1="$(printf "%s\n" "$KEY_INFO" | awk '/SHA1:/{gsub(":", "", $2); print tolower($2); exit}')"
+          test -n "$KEY_SHA1"
+          printf "%s\n" "$KEY_SHA1" > android-keystore-sha1.txt
+          KEMTIZ_STABLE_DEBUG_KEYSTORE="$KEYSTORE" gradle :app:assembleDebug --stacktrace
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          APKSIGNER="$(find "$SDK_DIR/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee android-signature.txt
+          APK_SHA1="$(awk '/certificate SHA-1 digest:/{print $NF; exit}' android-signature.txt)"
+          if [ "$APK_SHA1" != "$KEY_SHA1" ]; then
+            echo "APK signature does not match the stable CI signing key." >&2
+            exit 1
+          fi
       - name: Print APK certificate SHA-1 for Google OAuth
         shell: bash
         run: |
@@ -53,5 +67,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: kemtiz-android-debug
+          name: kemtiz-android-manual-check
           path: app/build/outputs/apk/debug/app-debug.apk
