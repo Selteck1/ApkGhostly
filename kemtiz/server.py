@@ -51,7 +51,7 @@ SECRET = get_secret()
 TOKEN_TTL = 60 * 60 * 24 * 30
 MAX_MESSAGE = 4000
 
-app = FastAPI(title="Kemtiz API", version="0.2.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="Kemtiz API", version="0.3.0", docs_url=None, redoc_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://appassets.androidplatform.net"],
@@ -375,6 +375,8 @@ def home():
         "ok": True,
         "app": "Kemtiz API",
         "client": "android-only",
+        "api_version": "0.3.0",
+        "auth_methods": ["username_password"],
         "message": "Используй приложение Kemtiz для Android.",
     }
 
@@ -386,7 +388,14 @@ def health():
     with db() as c:
         users = c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"]
         messages = c.execute("SELECT COUNT(*) n FROM messages").fetchone()["n"]
-    return {"ok":True,"app":"Kemtiz","users":users,"messages":messages}
+    return {
+        "ok": True,
+        "app": "Kemtiz",
+        "api_version": "0.3.0",
+        "password_auth": True,
+        "users": users,
+        "messages": messages,
+    }
 
 
 DEFAULT_GOOGLE_CLIENT_ID = "649066614178-fu0q0b09mi7iumi98ke3u435oe193vl8.apps.googleusercontent.com"
