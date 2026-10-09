@@ -122,6 +122,8 @@ class KemtizApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["client"], "android-only")
         self.assertEqual(response.json()["app"], "Kemtiz API")
+        self.assertEqual(response.json()["api_version"], "0.3.0")
+        self.assertIn("username_password", response.json()["auth_methods"])
 
     def test_android_webview_origin_is_allowed_by_cors(self):
         response = self.client.options(
@@ -240,6 +242,64 @@ class KemtizApiTests(unittest.TestCase):
         )
         self.assertEqual(history.status_code, 200, history.text)
         self.assertEqual(history.json()[-1]["body"], "Hello from tests")
+
+    def test_password_accounts_can_register_become_friends_and_message(self):
+        alice = self.client.post("/api/auth/password/register", json={
+            "username": "password_alice_chat",
+            "password": "long-password-123",
+            "display_name": "Password Alice",
+        })
+        bob = self.client.post("/api/auth/password/register", json={
+            "username": "password_bob_chat",
+            "password": "long-password-456",
+            "display_name": "Password Bob",
+        })
+        self.assertEqual(alice.status_code, 200, alice.text)
+        self.assertEqual(bob.status_code, 200, bob.text)
+        alice_token = alice.json()["token"]
+        bob_token = bob.json()["token"]
+
+        sent_request = self.client.post(
+            "/api/friends/requests",
+            headers=self.auth(alice_token),
+            json={"username": "password_bob_chat"},
+        )
+        self.assertEqual(sent_request.status_code, 200, sent_request.text)
+
+        inbox = self.client.get(
+            "/api/friends/requests", headers=self.auth(bob_token)
+        )
+        self.assertEqual(inbox.status_code, 200, inbox.text)
+        incoming = next(
+            row for row in inbox.json()["incoming"]
+            if row["username"] == "password_alice_chat"
+        )
+        accepted = self.client.post(
+            "/api/friends/requests/" + str(incoming["request_id"]) + "/accept",
+            headers=self.auth(bob_token),
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+
+        bob_id = bob.json()["user"]["id"]
+        created = self.client.post(
+            "/api/chats/direct/" + str(bob_id),
+            headers=self.auth(alice_token),
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        chat_id = created.json()["id"]
+
+        sent_message = self.client.post(
+            "/api/chats/" + str(chat_id) + "/messages",
+            headers=self.auth(alice_token),
+            json={"body": "Kemtiz password-auth chat works"},
+        )
+        self.assertEqual(sent_message.status_code, 200, sent_message.text)
+        history = self.client.get(
+            "/api/chats/" + str(chat_id) + "/messages",
+            headers=self.auth(bob_token),
+        )
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(history.json()[-1]["body"], "Kemtiz password-auth chat works")
 
     def test_user_cannot_create_direct_chat_without_friendship(self):
         response = self.client.post(
