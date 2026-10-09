@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -20,6 +21,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 public class KemtizActivity extends Activity {
+    private static final String PREFS = "kemtiz_settings";
     private static final String LOCAL_URL = "http://127.0.0.1:8000/";
     private static final int BG = Color.rgb(11, 12, 17);
     private static final int PANEL = Color.rgb(24, 25, 36);
@@ -114,9 +116,15 @@ public class KemtizActivity extends Activity {
         descLp.topMargin = dp(12);
         errorPanel.addView(description, descLp);
 
+        Button server = button("⚙  Адрес сервера");
+        LinearLayout.LayoutParams serverLp = match();
+        serverLp.topMargin = dp(20);
+        errorPanel.addView(server, serverLp);
+        server.setOnClickListener(v -> editServerUrl());
+
         Button help = button("Как запустить сервер");
         LinearLayout.LayoutParams helpLp = match();
-        helpLp.topMargin = dp(20);
+        helpLp.topMargin = dp(8);
         errorPanel.addView(help, helpLp);
         help.setOnClickListener(v -> showHelp());
 
@@ -135,10 +143,55 @@ public class KemtizActivity extends Activity {
         setContentView(root);
     }
 
+    private String serverUrl() {
+        String value = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getString("server_url", LOCAL_URL).trim();
+        if (value.isEmpty()) value = LOCAL_URL;
+        return value.endsWith("/") ? value : value + "/";
+    }
+
     private void loadApp() {
         errorPanel.setVisibility(View.GONE);
         webView.setVisibility(View.VISIBLE);
-        webView.loadUrl(LOCAL_URL);
+        webView.loadUrl(serverUrl());
+    }
+
+    private void editServerUrl() {
+        android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setText(serverUrl());
+        input.setHint("https://your-server.example");
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
+            android.text.InputType.TYPE_TEXT_VARIATION_URI);
+
+        new AlertDialog.Builder(this)
+            .setTitle("Адрес сервера Kemtiz")
+            .setMessage("На этом телефоне используй http://127.0.0.1:8000/. Для удалённого сервера нужен HTTPS.")
+            .setView(input)
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Сохранить", (dialog, which) -> {
+                String value = input.getText().toString().trim();
+                if (value.isEmpty()) {
+                    return;
+                }
+                if (!value.startsWith("http://") && !value.startsWith("https://")) {
+                    value = "https://" + value;
+                }
+                Uri uri = Uri.parse(value);
+                String host = uri.getHost();
+                boolean localHttp = "http".equals(uri.getScheme()) &&
+                    ("127.0.0.1".equals(host) || "localhost".equals(host));
+                if (host == null || (!"https".equals(uri.getScheme()) && !localHttp)) {
+                    new AlertDialog.Builder(this)
+                        .setMessage("Разрешены HTTPS-адреса или локальный адрес http://127.0.0.1:8000/.")
+                        .setPositiveButton("ОК", null).show();
+                    return;
+                }
+                String base = uri.buildUpon().path("/").query(null).fragment(null).build().toString();
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("server_url", base).apply();
+                loadApp();
+            })
+            .show();
     }
 
     private void showServerError() {
