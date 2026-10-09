@@ -80,6 +80,11 @@ def init_db() -> None:
           display_name TEXT NOT NULL,
           password_hash TEXT NOT NULL,
           phone_number TEXT,
+          google_sub TEXT,
+          email TEXT,
+          about TEXT NOT NULL DEFAULT '',
+          country TEXT NOT NULL DEFAULT '',
+          google_picture_url TEXT,
           created_at TEXT NOT NULL,
           last_seen_at TEXT
         );
@@ -144,10 +149,23 @@ def init_db() -> None:
         );
         """)
         user_columns = {row["name"] for row in c.execute("PRAGMA table_info(users)").fetchall()}
-        if "phone_number" not in user_columns:
-            c.execute("ALTER TABLE users ADD COLUMN phone_number TEXT")
+        migrations = {
+            "phone_number": "TEXT",
+            "google_sub": "TEXT",
+            "email": "TEXT",
+            "about": "TEXT NOT NULL DEFAULT ''",
+            "country": "TEXT NOT NULL DEFAULT ''",
+            "google_picture_url": "TEXT",
+        }
+        for column, definition in migrations.items():
+            if column not in user_columns:
+                c.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_number "
                   "ON users(phone_number) WHERE phone_number IS NOT NULL")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub "
+                  "ON users(google_sub) WHERE google_sub IS NOT NULL")
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email "
+                  "ON users(email) WHERE email IS NOT NULL")
 
 
 @app.on_event("startup")
@@ -162,7 +180,7 @@ def b64(data: bytes) -> str:
 def token_for(uid: int) -> str:
     now = int(time.time())
     head = b64(json.dumps({"alg":"HS256","typ":"JWT"}, separators=(",",":")).encode())
-    body = b64(json.dumps({"sub":uid,"iat":now,"exp":now+TOKEN_TTL,"auth":"sms"}, separators=(",",":")).encode())
+    body = b64(json.dumps({"sub":uid,"iat":now,"exp":now+TOKEN_TTL,"auth":"google"}, separators=(",",":")).encode())
     msg = (head + "." + body).encode()
     sig = b64(hmac.new(SECRET, msg, hashlib.sha256).digest())
     return head + "." + body + "." + sig
@@ -177,7 +195,7 @@ def user_id_from_token(token: str) -> int:
         payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
         if int(payload["exp"]) < int(time.time()):
             raise ValueError("expired")
-        if payload.get("auth") != "sms":
+        if payload.get("auth") != "google":
             raise ValueError("legacy authentication")
         return int(payload["sub"])
     except Exception:
@@ -185,8 +203,28 @@ def user_id_from_token(token: str) -> int:
 
 
 def public_user(row: sqlite3.Row) -> dict[str, Any]:
-    return {"id": row["id"], "username": row["username"], "display_name": row["display_name"],
-            "created_at": row["created_at"], "last_seen_at": row["last_seen_at"]}
+    keys = set(row.keys())
+    data = {
+        "id": row["id"],
+        "username": row["username"],
+        "display_name": row["display_name"],
+        "created_at": row["created_at"],
+        "last_seen_at": row["last_seen_at"],
+    }
+    if "about" in keys:
+        data["about"] = row["about"] or ""
+    if "country" in keys:
+        data["country"] = row["country"] or ""
+    if "google_picture_url" in keys:
+        data["avatar_url"] = row["google_picture_url"]
+    return data
+
+
+def private_user(row: sqlite3.Row) -> dict[str, Any]:
+    data = public_user(row)
+    if "email" in row.keys():
+        data["email"] = row["email"]
+    return data
 
 
 def auth_user(request: Request) -> dict[str, Any]:
@@ -201,13 +239,15 @@ def auth_user(request: Request) -> dict[str, Any]:
     return public_user(row)
 
 
-class PhoneCodeRequest(BaseModel):
-    phone: str = Field(min_length=6, max_length=32)
+class GoogleStartIn(BaseModel):
+    credential: str = Field(min_length=20, max_length=10000)
 
 
-class PhoneCodeVerify(BaseModel):
-    phone: str = Field(min_length=6, max_length=32)
-    code: str = Field(pattern=r"^\d{6}$")
+class GoogleFinishIn(BaseModel):
+    credential: str = Field(min_length=20, max_length=10000)
+    username: str = Field(min_length=3, max_length=25)
+    country: str = Field(default="", max_length=64)
+    about: str = Field(default="", max_length=200)
 
 
 class FriendIn(BaseModel):
@@ -330,194 +370,158 @@ def health():
     return {"ok":True,"app":"Kemtiz","users":users,"messages":messages}
 
 
-def normalize_phone(value: str) -> str:
-    compact = re.sub(r"[\s().-]", "", value.strip())
-    if compact.startswith("00"):
-        compact = "+" + compact[2:]
-    digits = compact[1:] if compact.startswith("+") else compact
-    if not digits.isdigit():
-        raise HTTPException(status_code=422, detail="Введи номер телефона с кодом страны, например +7 900 123-45-67.")
-    if len(digits) == 11 and digits.startswith("8"):
-        digits = "7" + digits[1:]
-    elif len(digits) == 10 and digits.startswith("9"):
-        digits = "7" + digits
-    if not 8 <= len(digits) <= 15 or digits.startswith("0"):
-        raise HTTPException(status_code=422, detail="Проверь номер телефона и укажи код страны.")
-    return "+" + digits
+def google_client_id() -> str:
+    return os.environ.get("KEMTIZ_GOOGLE_CLIENT_ID", "").strip()
 
 
-def otp_hash(phone: str, code: str) -> str:
-    raw = f"kemtiz:sms-code:{phone}:{code}".encode("utf-8")
-    return hmac.new(SECRET, raw, hashlib.sha256).hexdigest()
+@app.get("/api/config")
+def public_config():
+    return {"google_client_id": google_client_id()}
 
 
-async def send_sms_code(phone: str, code: str) -> None:
-    api_id = os.environ.get("SMSRU_API_ID", "").strip()
-    if not api_id:
+async def verify_google_credential(credential: str) -> dict[str, Any]:
+    client_id = google_client_id()
+    if not client_id:
         raise HTTPException(
             status_code=503,
-            detail="SMS пока не подключены. Настрой SMSRU_API_ID в Termux — ключ SMS.RU.",
+            detail="Google-вход пока не настроен. Добавь KEMTIZ_GOOGLE_CLIENT_ID в конфигурацию сервера.",
         )
-
-    digits = phone[1:]
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(
-                "https://sms.ru/sms/send",
-                data={
-                    "api_id": api_id,
-                    "to": digits,
-                    "msg": f"Kemtiz: код подтверждения {code}. Никому его не сообщай.",
-                    "json": "1",
-                },
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": credential},
             )
-            response.raise_for_status()
-            payload = response.json()
-    except (httpx.HTTPError, ValueError):
-        raise HTTPException(
-            status_code=502,
-            detail="Не удалось связаться с SMS-сервисом. Попробуй ещё раз позже.",
-        )
-
-    result = (payload.get("sms") or {}).get(digits) or {}
-    if payload.get("status") != "OK" or result.get("status") != "OK":
-        provider_message = result.get("status_text") or payload.get("status_text")
-        provider_code = result.get("status_code") or payload.get("status_code")
-        detail = provider_message or (f"код {provider_code}" if provider_code else "провайдер отклонил отправку")
-        raise HTTPException(status_code=502, detail=f"SMS-сервис не отправил сообщение: {detail}.")
-
-
-@app.post("/api/auth/request-code")
-async def request_auth_code(body: PhoneCodeRequest, request: Request):
-    phone = normalize_phone(body.phone)
-    if not os.environ.get("SMSRU_API_ID", "").strip():
-        raise HTTPException(
-            status_code=503,
-            detail="SMS пока не подключены. Нужен API-ключ SMS.RU в переменной SMSRU_API_ID.",
-        )
-
-    now = int(time.time())
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    hashed = otp_hash(phone, code)
-
-    with db() as c:
-        rate = c.execute(
-            "SELECT last_sent_at,window_started_at,send_count FROM auth_rate_limits WHERE phone_number=?",
-            (phone,),
-        ).fetchone()
-        if rate:
-            elapsed = now - int(rate["last_sent_at"])
-            if elapsed < 60:
-                wait = 60 - elapsed
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Подожди {wait} сек. перед повторной отправкой кода.",
-                )
-            window_started = int(rate["window_started_at"])
-            send_count = int(rate["send_count"])
-            if now - window_started < 3600:
-                if send_count >= 5:
-                    raise HTTPException(
-                        status_code=429,
-                        detail="Для этого номера уже запрошено 5 кодов за час. Попробуй позже.",
-                    )
-                send_count += 1
-            else:
-                window_started = now
-                send_count = 1
-        else:
-            window_started = now
-            send_count = 1
-
-        c.execute(
-            """INSERT INTO auth_rate_limits(phone_number,last_sent_at,window_started_at,send_count)
-               VALUES(?,?,?,?)
-               ON CONFLICT(phone_number) DO UPDATE SET
-                 last_sent_at=excluded.last_sent_at,
-                 window_started_at=excluded.window_started_at,
-                 send_count=excluded.send_count""",
-            (phone, now, window_started, send_count),
-        )
-        c.execute(
-            """INSERT INTO auth_codes(phone_number,code_hash,expires_at,attempts,last_sent_at,window_started_at,send_count)
-               VALUES(?,?,?,0,?,?,?)
-               ON CONFLICT(phone_number) DO UPDATE SET
-                 code_hash=excluded.code_hash,
-                 expires_at=excluded.expires_at,
-                 attempts=0,
-                 last_sent_at=excluded.last_sent_at,
-                 window_started_at=excluded.window_started_at,
-                 send_count=excluded.send_count""",
-            (phone, hashed, now + 300, now, window_started, send_count),
-        )
-
-    try:
-        await send_sms_code(phone, code)
+            if response.status_code != 200:
+                raise HTTPException(status_code=401, detail="Google не подтвердил этот аккаунт. Попробуй ещё раз.")
+            claims = response.json()
     except HTTPException:
-        with db() as c:
-            c.execute("DELETE FROM auth_codes WHERE phone_number=? AND code_hash=?", (phone, hashed))
         raise
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(status_code=502, detail="Не удалось связаться с Google. Проверь интернет и попробуй снова.")
 
-    return {"ok": True, "phone": phone, "message": "Код подтверждения отправлен по SMS."}
+    issuer = claims.get("iss")
+    try:
+        expires_at = int(claims.get("exp", "0"))
+    except (TypeError, ValueError):
+        expires_at = 0
+    verified = claims.get("email_verified") in (True, "true", "True", 1, "1")
+    if (
+        claims.get("aud") != client_id
+        or issuer not in ("accounts.google.com", "https://accounts.google.com")
+        or expires_at <= int(time.time())
+        or not claims.get("sub")
+        or not claims.get("email")
+        or not verified
+    ):
+        raise HTTPException(status_code=401, detail="Не удалось проверить Google-аккаунт или его адрес электронной почты.")
 
-@app.post("/api/auth/verify-code")
-def verify_auth_code(body: PhoneCodeVerify):
-    phone = normalize_phone(body.phone)
-    now = int(time.time())
-    failure: tuple[int, str] | None = None
-    fresh_user: dict[str, Any] | None = None
-    uid: int | None = None
+    return {
+        "sub": str(claims["sub"]),
+        "email": str(claims["email"]).strip().lower(),
+        "name": str(claims.get("name") or claims["email"].split("@", 1)[0]).strip()[:80],
+        "picture": str(claims.get("picture") or "")[:2000],
+    }
+
+
+def token_for_google_user(uid: int) -> str:
+    return token_for(uid)
+
+
+def google_profile_response(claims: dict[str, Any]) -> dict[str, str]:
+    return {
+        "name": claims["name"],
+        "email": claims["email"],
+        "picture": claims["picture"],
+    }
+
+
+def login_existing_google_user(c: sqlite3.Connection, row: sqlite3.Row, claims: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    uid = int(row["id"])
+    # A verified Google email may link an older account that has not connected a Google identity yet.
+    if row["google_sub"] and row["google_sub"] != claims["sub"]:
+        raise HTTPException(status_code=409, detail="Этот адрес уже привязан к другому Google-аккаунту.")
+    try:
+        c.execute(
+            """UPDATE users SET google_sub=?, email=?, google_picture_url=?,
+               last_seen_at=? WHERE id=?""",
+            (claims["sub"], claims["email"], claims["picture"] or row["google_picture_url"],
+             utc_now(), uid),
+        )
+        fresh = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="Этот Google-аккаунт уже связан с другим пользователем.")
+    return token_for_google_user(uid), private_user(fresh)
+
+
+@app.post("/api/auth/google/start")
+async def google_auth_start(body: GoogleStartIn):
+    claims = await verify_google_credential(body.credential)
+    with db() as c:
+        row = c.execute("SELECT * FROM users WHERE google_sub=?", (claims["sub"],)).fetchone()
+        if row is None:
+            row = c.execute("SELECT * FROM users WHERE email=?", (claims["email"],)).fetchone()
+        if row is not None:
+            token, user = login_existing_google_user(c, row, claims)
+            return {"needs_profile": False, "token": token, "user": user}
+
+    return {"needs_profile": True, "profile": google_profile_response(claims)}
+
+
+@app.post("/api/auth/google/finish")
+async def google_auth_finish(body: GoogleFinishIn):
+    claims = await verify_google_credential(body.credential)
+    username = body.username.strip().removeprefix("@").lower()
+    if not username.isascii() or not re.fullmatch(r"[a-z0-9_]{3,24}", username) or not username[0].isalnum():
+        raise HTTPException(status_code=422, detail="Username: 3–24 символа, латинские буквы, цифры и _.")
+    country = body.country.strip()
+    about = body.about.strip()
+    now = utc_now()
 
     with db() as c:
-        stored = c.execute("SELECT * FROM auth_codes WHERE phone_number=?", (phone,)).fetchone()
-        if stored is None:
-            failure = (400, "Сначала запроси код по SMS.")
-        elif int(stored["expires_at"]) <= now:
-            c.execute("DELETE FROM auth_codes WHERE phone_number=?", (phone,))
-            failure = (400, "Код истёк. Запроси новый.")
-        elif int(stored["attempts"]) >= 5:
-            c.execute("DELETE FROM auth_codes WHERE phone_number=?", (phone,))
-            failure = (429, "Слишком много попыток. Запроси новый код.")
-        elif not hmac.compare_digest(str(stored["code_hash"]), otp_hash(phone, body.code)):
-            attempts = int(stored["attempts"]) + 1
-            if attempts >= 5:
-                c.execute("DELETE FROM auth_codes WHERE phone_number=?", (phone,))
-                failure = (429, "Слишком много попыток. Запроси новый код.")
-            else:
-                c.execute("UPDATE auth_codes SET attempts=? WHERE phone_number=?", (attempts, phone))
-                failure = (400, f"Неверный код. Осталось попыток: {5 - attempts}.")
-        else:
-            c.execute("DELETE FROM auth_codes WHERE phone_number=?", (phone,))
-            row = c.execute("SELECT * FROM users WHERE phone_number=?", (phone,)).fetchone()
-            now_text = utc_now()
-            if row is None:
-                username = "kemtiz_" + secrets.token_hex(4)
-                while c.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
-                    username = "kemtiz_" + secrets.token_hex(4)
-                display_name = "Пользователь " + str(1000 + secrets.randbelow(9000))
-                cur = c.execute(
-                    """INSERT INTO users(username,display_name,password_hash,phone_number,created_at,last_seen_at)
-                       VALUES(?,?,?,?,?,?)""",
-                    (username, display_name, "otp-only", phone, now_text, now_text),
-                )
-                uid = int(cur.lastrowid)
-                row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-            else:
-                uid = int(row["id"])
-                c.execute("UPDATE users SET last_seen_at=? WHERE id=?", (now_text, uid))
-                row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-            fresh_user = public_user(row)
+        existing = c.execute("SELECT * FROM users WHERE google_sub=?", (claims["sub"],)).fetchone()
+        if existing is None:
+            existing = c.execute("SELECT * FROM users WHERE email=?", (claims["email"],)).fetchone()
+        if existing is not None:
+            token, user = login_existing_google_user(c, existing, claims)
+            return {"token": token, "user": user}
 
-    if failure:
-        raise HTTPException(status_code=failure[0], detail=failure[1])
-    if uid is None or fresh_user is None:
-        raise HTTPException(status_code=500, detail="Не удалось завершить вход. Попробуй снова.")
-    return {"token": token_for(uid), "user": fresh_user}
+        try:
+            cursor = c.execute(
+                """INSERT INTO users(
+                    username,display_name,password_hash,phone_number,google_sub,email,about,country,
+                    google_picture_url,created_at,last_seen_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    username,
+                    claims["name"] or claims["email"].split("@", 1)[0],
+                    "google-only$" + secrets.token_urlsafe(36),
+                    None,
+                    claims["sub"],
+                    claims["email"],
+                    about,
+                    country,
+                    claims["picture"] or None,
+                    now,
+                    now,
+                ),
+            )
+        except sqlite3.IntegrityError:
+            if c.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+                raise HTTPException(status_code=409, detail="Этот username уже занят. Выбери другой.")
+            raise HTTPException(status_code=409, detail="Этот Google-аккаунт уже зарегистрирован.")
+        uid = int(cursor.lastrowid)
+        user_row = c.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
 
+    return {"token": token_for_google_user(uid), "user": private_user(user_row)}
 
 @app.get("/api/me")
 def me(user=Depends(auth_user)):
-    return user
+    with db() as c:
+        row = c.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=401, detail="Пользователь не найден.")
+    return private_user(row)
 
 
 @app.get("/api/users/search")
