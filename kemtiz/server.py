@@ -162,7 +162,7 @@ def b64(data: bytes) -> str:
 def token_for(uid: int) -> str:
     now = int(time.time())
     head = b64(json.dumps({"alg":"HS256","typ":"JWT"}, separators=(",",":")).encode())
-    body = b64(json.dumps({"sub":uid,"iat":now,"exp":now+TOKEN_TTL}, separators=(",",":")).encode())
+    body = b64(json.dumps({"sub":uid,"iat":now,"exp":now+TOKEN_TTL,"auth":"sms"}, separators=(",",":")).encode())
     msg = (head + "." + body).encode()
     sig = b64(hmac.new(SECRET, msg, hashlib.sha256).digest())
     return head + "." + body + "." + sig
@@ -177,28 +177,11 @@ def user_id_from_token(token: str) -> int:
         payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
         if int(payload["exp"]) < int(time.time()):
             raise ValueError("expired")
+        if payload.get("auth") != "sms":
+            raise ValueError("legacy authentication")
         return int(payload["sub"])
     except Exception:
         raise HTTPException(status_code=401, detail="Сессия истекла. Войди снова.")
-
-
-def password_hash(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    key = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
-    return "scrypt$" + b64(salt) + "$" + b64(key)
-
-
-def password_ok(password: str, stored: str) -> bool:
-    try:
-        algo, salt_s, key_s = stored.split("$")
-        if algo != "scrypt":
-            return False
-        salt = base64.urlsafe_b64decode(salt_s + "=" * (-len(salt_s) % 4))
-        expected = base64.urlsafe_b64decode(key_s + "=" * (-len(key_s) % 4))
-        actual = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1, dklen=len(expected))
-        return hmac.compare_digest(actual, expected)
-    except Exception:
-        return False
 
 
 def public_user(row: sqlite3.Row) -> dict[str, Any]:
@@ -511,7 +494,7 @@ def verify_auth_code(body: PhoneCodeVerify):
                 username = "kemtiz_" + secrets.token_hex(4)
                 while c.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
                     username = "kemtiz_" + secrets.token_hex(4)
-                display_name = "Пользователь " + phone[-4:]
+                display_name = "Пользователь " + str(1000 + secrets.randbelow(9000))
                 cur = c.execute(
                     """INSERT INTO users(username,display_name,password_hash,phone_number,created_at,last_seen_at)
                        VALUES(?,?,?,?,?,?)""",
