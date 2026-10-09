@@ -24,6 +24,12 @@ ID-токен проверяется сервером через защищён�
 Подробности: [официальная настройка Google Sign-In для веба](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid) и [Google Sign-In для Android](https://developer.android.com/identity/sign-in/credential-manager-siwg?hl=en).
 
 
+## Windows Desktop (рекомендуемый вариант без публичного HTTPS)
+
+Ветка `kemtiz-messenger` собирает отдельное Windows-приложение `Kemtiz.exe`. Оно запускает сервер на ПК и открывает мессенджер в собственном окне. Для подключения телефона нужно, чтобы он и ПК находились в одной доверенной Wi-Fi сети; адрес локальной сети появится при старте приложения.
+
+Инструкция по сборке и использованию находится в [kemtiz/desktop/README.md](desktop/README.md). Артефакт `Kemtiz-Desktop-Windows` публикуется через GitHub Actions. Для LAN-соединения Android APK должен быть собран из этой ветки; HTTP предназначен только для доверенной локальной сети и не должен выставляться в интернет.
+
 ## Запуск в Termux
 
 В Termux сначала останови старый процесс сервера сочетанием `CTRL+C`, затем выполни:
