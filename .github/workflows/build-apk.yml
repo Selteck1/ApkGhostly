@@ -1,4 +1,4 @@
-name: Build Ghostly APK
+name: Build Kemtiz Native Android APK
 
 on:
   push:
@@ -34,13 +34,13 @@ jobs:
           test -s app/src/main/res/raw/ghostly_intro.mp4
           file app/src/main/res/raw/ghostly_intro.mp4
 
-      - name: Build debug APK
+      - name: Build native debug APK
         run: gradle --no-daemon assembleDebug
 
       - name: Publish APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Ghostly-debug-apk
+          name: Kemtiz-Native-Android-2.3.0
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
