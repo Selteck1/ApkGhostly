@@ -53,8 +53,8 @@ public class KemtizActivity extends Activity {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final OkHttpClient http = new OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS).readTimeout(35, TimeUnit.SECONDS)
-        .writeTimeout(20, TimeUnit.SECONDS).pingInterval(25, TimeUnit.SECONDS).build();
+        .connectTimeout(25, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(25, TimeUnit.SECONDS).pingInterval(25, TimeUnit.SECONDS).build();
     private SharedPreferences prefs;
     private String token = "";
     private JSONObject me;
@@ -116,7 +116,7 @@ public class KemtizActivity extends Activity {
         content.setPadding(dp(23), dp(24), dp(23), dp(25));
         authScroll.addView(content, new ScrollView.LayoutParams(-1, -2));
 
-        TextView logo = text("✦", 30, WHITE, Gravity.CENTER);
+        TextView logo = text("K", 30, WHITE, Gravity.CENTER);
         logo.setTypeface(Typeface.DEFAULT_BOLD);
         logo.setBackground(bg(PURPLE, 22));
         LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(66), dp(66));
@@ -236,8 +236,10 @@ public class KemtizActivity extends Activity {
         }
         hideKeyboard(authPassword);
         authSubmit.setEnabled(false);
+        authSubmit.setText("Проверяем…");
         api("POST", "/api/auth/password/login", obj("username", username, "password", password), (data, error) -> {
             authSubmit.setEnabled(true);
+            authSubmit.setText("Войти в Kemtiz");
             if (error != null || !(data instanceof JSONObject)) {
                 authError.setText(error == null ? "Не удалось войти. Попробуй ещё раз." : error);
                 authError.setVisibility(View.VISIBLE);
@@ -271,10 +273,12 @@ public class KemtizActivity extends Activity {
 
         hideKeyboard(authConfirm);
         authSubmit.setEnabled(false);
+        authSubmit.setText("Создаём аккаунт…");
         api("POST", "/api/auth/password/register",
             obj("username", username, "password", password, "display_name", username),
             (data, error) -> {
                 authSubmit.setEnabled(true);
+                authSubmit.setText("Создать аккаунт");
                 if (error != null || !(data instanceof JSONObject)) {
                     authError.setText(error == null ? "Не удалось создать аккаунт." : error);
                     authError.setVisibility(View.VISIBLE);
@@ -313,7 +317,7 @@ public class KemtizActivity extends Activity {
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(17), dp(13), dp(17), dp(13));
-        TextView logo = text("✦", 19, WHITE, Gravity.CENTER);
+        TextView logo = text("K", 19, WHITE, Gravity.CENTER);
         logo.setTypeface(Typeface.DEFAULT_BOLD);
         logo.setBackground(bg(PURPLE, 14));
         header.addView(logo, new LinearLayout.LayoutParams(dp(43), dp(43)));
@@ -346,20 +350,29 @@ public class KemtizActivity extends Activity {
 
         LinearLayout nav = new LinearLayout(this);
         nav.setOrientation(LinearLayout.HORIZONTAL);
-        nav.setPadding(dp(4), dp(8), dp(4), dp(7));
-        nav.setBackground(bg(SURFACE, 18));
-        String[][] items = {{"chats","▤","Чаты"},{"friends","♙","Друзья"},{"requests","↗","Заявки"},{"search","⌕","Найти"},{"profile","●","Профиль"}};
+        nav.setPadding(dp(7), dp(7), dp(7), dp(7));
+        nav.setBackground(bg(SURFACE, 20));
+        String[][] items = {{"chats","▰","Чаты"},{"friends","♧","Друзья"},{"requests","↗","Заявки"},{"search","⌕","Найти"},{"profile","●","Профиль"}};
         for (String[] item : items) {
             LinearLayout tab = new LinearLayout(this);
             tab.setOrientation(LinearLayout.VERTICAL);
             tab.setGravity(Gravity.CENTER);
-            int c = item[0].equals(screen) || ("chat".equals(screen) && "chats".equals(item[0])) ? ACCENT : MUTED;
-            tab.addView(text(item[1], 19, c, Gravity.CENTER));
-            tab.addView(text(item[2], 10, c == ACCENT ? WHITE : MUTED, Gravity.CENTER), topMargin(wrap(), 2));
+            tab.setPadding(dp(2), dp(5), dp(2), dp(5));
+            boolean selected = item[0].equals(screen) || ("chat".equals(screen) && "chats".equals(item[0]));
+            int c = selected ? ACCENT : MUTED;
+            tab.setBackground(bg(selected ? Color.rgb(52, 42, 78) : Color.TRANSPARENT, 14));
+            tab.setContentDescription(item[2]);
+            tab.addView(text(item[1], 20, c, Gravity.CENTER));
+            tab.addView(text(item[2], 10, selected ? WHITE : MUTED, Gravity.CENTER), topMargin(wrap(), 2));
             tab.setOnClickListener(v -> navigate(item[0]));
-            nav.addView(tab, new LinearLayout.LayoutParams(0, -2, 1));
+            nav.addView(tab, new LinearLayout.LayoutParams(0, dp(54), 1));
         }
-        root.addView(nav, match());
+        LinearLayout.LayoutParams navLp = match();
+        navLp.leftMargin = dp(10);
+        navLp.rightMargin = dp(10);
+        navLp.bottomMargin = dp(8);
+        navLp.topMargin = dp(5);
+        root.addView(nav, navLp);
         setContentView(root);
         render();
     }
@@ -620,20 +633,52 @@ public class KemtizActivity extends Activity {
 
     private void closeSocket(){if(socket!=null){socket.close(1000,"close");socket=null;}}
 
+    private String apiError(Object parsed, int status, String path) {
+        if (status == 404 && path.startsWith("/api/auth/password/")) {
+            String action = path.endsWith("/register") ? "регистрации" : "входа";
+            return "На сервере Kemtiz не найден маршрут " + action
+                + ". Render ещё не обновлён: нужно развернуть папку kemtiz из ApkGhostly.";
+        }
+
+        String fallback = "Ошибка " + status;
+        if (parsed instanceof JSONObject) {
+            JSONObject object = (JSONObject) parsed;
+            Object detail = object.opt("detail");
+            if (detail instanceof String && !((String) detail).trim().isEmpty()) {
+                return ((String) detail).trim();
+            }
+            if (detail instanceof JSONArray) {
+                JSONArray errors = (JSONArray) detail;
+                if (errors.length() > 0) {
+                    JSONObject first = errors.optJSONObject(0);
+                    if (first != null) {
+                        String message = first.optString("msg", "").trim();
+                        if (!message.isEmpty()) return "Проверь данные: " + message;
+                    }
+                }
+            }
+            String message = object.optString("message", "").trim();
+            if (!message.isEmpty()) return message;
+        }
+        return fallback;
+    }
+
     private void api(String method,String path,JSONObject body,Result callback){
         Request.Builder b=new Request.Builder().url(API+path);
         if(!token.isEmpty())b.header("Authorization","Bearer "+token);
         if("POST".equals(method))b.post(RequestBody.create(JSON,body==null?"{}":body.toString()));else b.get();
         http.newCall(b.build()).enqueue(new Callback(){
-            @Override public void onFailure(Call call,IOException e){main.post(()->callback.done(null,"Нет соединения с сервером. Проверь интернет и повтори попытку."));}
+            @Override public void onFailure(Call call,IOException e){
+                String message = e instanceof java.net.SocketTimeoutException
+                    ? "Сервер долго отвечает. Бесплатный Render может запускаться до минуты — нажми ещё раз."
+                    : "Нет соединения с сервером. Проверь интернет и повтори попытку.";
+                main.post(()->callback.done(null,message));
+            }
             @Override public void onResponse(Call call,Response response)throws IOException{
                 String raw=response.body()==null?"":response.body().string();Object parsed=new JSONObject();
                 try{String s=raw.trim();if(s.startsWith("["))parsed=new JSONArray(s);else if(s.startsWith("{"))parsed=new JSONObject(s);}catch(JSONException ignored){}
                 String error=null;
-                if(!response.isSuccessful()){
-                    error="Ошибка "+response.code();
-                    if(parsed instanceof JSONObject)error=((JSONObject)parsed).optString("detail",((JSONObject)parsed).optString("message",error));
-                }
+                if(!response.isSuccessful()) error=apiError(parsed,response.code(),path);
                 Object finalData=parsed;String finalError=error;
                 main.post(()->{
                     if(response.code()==401&&!path.startsWith("/api/auth/")&&!token.isEmpty()){
