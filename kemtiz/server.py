@@ -313,6 +313,11 @@ def home():
     return FileResponse(WEB_DIR / "index.html")
 
 
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(WEB_DIR / "sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/"})
+
+
 @app.get("/health")
 def health():
     with db() as c:
