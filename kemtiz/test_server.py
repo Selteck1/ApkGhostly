@@ -67,7 +67,7 @@ class KemtizApiTests(unittest.TestCase):
         user_id = self.alice_data["user"]["id"]
         with server_module.db() as c:
             c.execute(
-                "UPDATE auth_codes SET last_sent_at=? WHERE phone_number=?",
+                "UPDATE auth_rate_limits SET last_sent_at=? WHERE phone_number=?",
                 (int(time.time()) - 61, self.alice_phone),
             )
 
