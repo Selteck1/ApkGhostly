@@ -1,36 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
   <defs>
-    <linearGradient id="kemtiz-top" x1="26" y1="22" x2="98" y2="78" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#D7C7FF"/>
-      <stop offset=".46" stop-color="#A989FF"/>
-      <stop offset="1" stop-color="#805DFF"/>
+    <linearGradient id="tile" x1="17" y1="9" x2="111" y2="119" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#20243A"/>
+      <stop offset="1" stop-color="#0B101D"/>
     </linearGradient>
-    <linearGradient id="kemtiz-flow" x1="33" y1="54" x2="87" y2="108" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#9470FF"/>
-      <stop offset=".52" stop-color="#6E8DFF"/>
-      <stop offset="1" stop-color="#4AD7D0"/>
+    <linearGradient id="mark" x1="38" y1="25" x2="96" y2="103" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E0D5FF"/>
+      <stop offset=".48" stop-color="#A58BFF"/>
+      <stop offset="1" stop-color="#7856E8"/>
     </linearGradient>
-    <linearGradient id="kemtiz-glass" x1="18" y1="9" x2="110" y2="120" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#22243D"/>
-      <stop offset="1" stop-color="#0C1220"/>
+    <linearGradient id="echo" x1="64" y1="57" x2="103" y2="96" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9C82FF"/>
+      <stop offset="1" stop-color="#55DED1"/>
     </linearGradient>
-    <radialGradient id="kemtiz-halo" cx="0" cy="0" r="1" gradientTransform="matrix(47 46 -39 40 41 35)" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8B72FF" stop-opacity=".27"/>
-      <stop offset="1" stop-color="#4AD7D0" stop-opacity="0"/>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(48 40 -36 43 37 31)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8A70FF" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#55DED1" stop-opacity="0"/>
     </radialGradient>
-    <filter id="kemtiz-shadow" x="7" y="4" width="114" height="120" filterUnits="userSpaceOnUse">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 .35 0 0 0 0 .23 0 0 0 0 .95 0 0 0 .5 0" result="glow"/>
-      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
-  <rect x="4" y="4" width="120" height="120" rx="33" fill="#080B14" stroke="#5D5B91" stroke-opacity=".7"/>
-  <rect x="8" y="8" width="112" height="112" rx="29" fill="url(#kemtiz-glass)"/>
-  <rect x="8" y="8" width="112" height="112" rx="29" fill="url(#kemtiz-halo)"/>
-  <path d="M29 55C29 36 44 25 88 15C81 31 69 42 53 49C42 54 37 62 36 74L34 95C26 90 21 81 21 71C21 64 24 59 29 55Z" fill="url(#kemtiz-top)" filter="url(#kemtiz-shadow)"/>
-  <path d="M36 70C44 59 56 55 72 48C85 42 94 33 99 22C102 42 92 59 73 72C61 80 51 87 44 101C39 92 36 82 36 70Z" fill="url(#kemtiz-flow)"/>
-  <path d="M38 53C44 45 53 40 65 36C73 33 81 28 88 20" stroke="#F1E9FF" stroke-opacity=".8" stroke-width="2.4" stroke-linecap="round"/>
-  <path d="M43 87C50 77 59 72 69 66C78 60 85 53 90 45" stroke="#C7FFF9" stroke-opacity=".65" stroke-width="2" stroke-linecap="round"/>
-  <circle cx="99" cy="91" r="2.4" fill="#76E9E1"/>
-  <circle cx="24" cy="43" r="2.2" fill="#C9B8FF"/>
+  <rect x="4" y="4" width="120" height="120" rx="32" fill="#070A12" stroke="#474667" stroke-opacity=".72"/>
+  <rect x="8" y="8" width="112" height="112" rx="29" fill="url(#tile)"/>
+  <rect x="8" y="8" width="112" height="112" rx="29" fill="url(#glow)"/>
+  <path d="M37 26H54V54L81 29L94 42L68 65L96 91L82 104L54 77V102H37V26Z" fill="url(#mark)"/>
+  <path d="M65 65L77 54L102 78V93L87 104L65 82L74 73L65 65Z" fill="url(#echo)" opacity=".96"/>
+  <path d="M45 36V48M45 57V67" stroke="#F4EEFF" stroke-opacity=".72" stroke-width="3" stroke-linecap="round"/>
+  <path d="M101 28L104 35L111 38L104 41L101 48L98 41L91 38L98 35L101 28Z" fill="#A9F7EE"/>
 </svg>
