@@ -12,7 +12,7 @@ import androidx.credentials.CustomCredential;
 import androidx.credentials.GetCredentialRequest;
 import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialException;
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import org.json.JSONObject;
 import android.app.AlertDialog;
@@ -172,10 +172,7 @@ public class KemtizActivity extends Activity {
         }
 
         try {
-            GetGoogleIdOption googleOption = new GetGoogleIdOption.Builder()
-                .setServerClientId(clientId.trim())
-                .setFilterByAuthorizedAccounts(false)
-                .setAutoSelectEnabled(false)
+            GetSignInWithGoogleOption googleOption = new GetSignInWithGoogleOption.Builder(clientId.trim())
                 .build();
             GetCredentialRequest request = new GetCredentialRequest.Builder()
                 .addCredentialOption(googleOption)
@@ -206,12 +203,31 @@ public class KemtizActivity extends Activity {
 
                     @Override
                     public void onError(GetCredentialException error) {
-                        sendGoogleError("Вход через Google отменён или не завершён. Попробуй выбрать аккаунт ещё раз.");
+                        String problem = error.getClass().getSimpleName();
+                        String reason = error.getMessage();
+                        if (reason != null && !reason.trim().isEmpty()) {
+                            problem += ": " + reason.trim();
+                        }
+                        if (problem.length() > 240) {
+                            problem = problem.substring(0, 240);
+                        }
+                        sendGoogleError(
+                            "Google не открыл выбор аккаунта (" + problem + "). " +
+                            "Проверь, что Google Play Services обновлены и на телефоне добавлен Google-аккаунт."
+                        );
                     }
                 }
             );
         } catch (Exception error) {
-            sendGoogleError("Не удалось открыть выбор Google-аккаунта. Проверь Google Play Services.");
+            String problem = error.getClass().getSimpleName();
+            String reason = error.getMessage();
+            if (reason != null && !reason.trim().isEmpty()) {
+                problem += ": " + reason.trim();
+            }
+            if (problem.length() > 240) {
+                problem = problem.substring(0, 240);
+            }
+            sendGoogleError("Не удалось открыть выбор Google-аккаунта (" + problem + "). Проверь Google Play Services.");
         }
     }
 
