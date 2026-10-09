@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 import qrcode
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QPixmap
+from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QDialogButtonBox, QFormLayout,
     QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QMenu,
@@ -72,6 +72,13 @@ def paths() -> tuple[Path, Path]:
         API_BASE = ""
         USE_REMOTE_SERVER = False
     return app_dir, cfg_file
+
+def icon_resource_path(filename: str) -> Path:
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        return Path(bundle_root) / "assets" / filename
+    return Path(__file__).resolve().parent / filename
+
 
 def save_config(path: Path, config: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -185,6 +192,16 @@ class MainWindow(QMainWindow):
         col.setContentsMargins(38, 30, 38, 30)
         col.setSpacing(14)
 
+        logo = QLabel()
+        logo.setObjectName("brandMark")
+        logo.setFixedSize(68, 68)
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_pixmap = QPixmap(str(icon_resource_path("kemtiz.png")))
+        if not brand_pixmap.isNull():
+            logo.setPixmap(brand_pixmap.scaled(
+                68, 68, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            ))
         brand = QLabel("KEMTIZ")
         brand.setObjectName("brand")
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -235,6 +252,7 @@ class MainWindow(QMainWindow):
         connect_note.setObjectName("subtle")
         connect_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        col.addWidget(logo, alignment=Qt.AlignmentFlag.AlignCenter)
         for widget in (brand, tagline, title, desc):
             col.addWidget(widget)
         col.addSpacing(4)
@@ -726,6 +744,9 @@ def main():
     app.setApplicationName("Kemtiz")
     app.setOrganizationName("Kemtiz")
     app.setStyle("Fusion")
+    icon_file = icon_resource_path("kemtiz.ico")
+    if icon_file.exists():
+        app.setWindowIcon(QIcon(str(icon_file)))
 
     try:
         config = json.loads(config_path.read_text("utf-8")) if config_path.exists() else {}
