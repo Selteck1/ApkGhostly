@@ -112,7 +112,7 @@ class KemtizApiTests(unittest.TestCase):
 
     def test_email_is_private_in_public_user_search(self):
         response = self.client.get(
-            "/api/users/search?q=alice",
+            "/api/users/search?q=" + self.alice_data["user"]["username"],
             headers=self.auth(self.bob_token),
         )
         self.assertEqual(response.status_code, 200, response.text)
