@@ -17,9 +17,6 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 import httpx
-from google.auth.exceptions import GoogleAuthError
-from google.auth.transport.requests import Request as GoogleRequest
-from google.oauth2 import id_token as google_id_token
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -383,6 +380,7 @@ def public_config():
 
 
 async def verify_google_credential(credential: str) -> dict[str, Any]:
+    """Validate a Google ID token against Google's HTTPS tokeninfo endpoint."""
     client_id = google_client_id()
     if not client_id:
         raise HTTPException(
@@ -390,20 +388,25 @@ async def verify_google_credential(credential: str) -> dict[str, Any]:
             detail="Google-вход пока не настроен. Добавь KEMTIZ_GOOGLE_CLIENT_ID в конфигурацию сервера.",
         )
     try:
-        claims = await asyncio.to_thread(
-            google_id_token.verify_oauth2_token,
-            credential,
-            GoogleRequest(),
-            client_id,
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": credential},
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=401, detail="Google не подтвердил этот аккаунт. Попробуй ещё раз.")
+            claims = response.json()
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(
+            status_code=502,
+            detail="Не удалось связаться с Google для проверки аккаунта. Проверь интернет и попробуй снова.",
         )
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Google не подтвердил этот аккаунт. Попробуй ещё раз.")
-    except GoogleAuthError:
-        raise HTTPException(status_code=502, detail="Не удалось проверить подпись Google. Проверь интернет и попробуй снова.")
 
     issuer = claims.get("iss")
     try:
-        expires_at = int(claims.get("exp", 0))
+        expires_at = int(claims.get("exp", "0"))
     except (TypeError, ValueError):
         expires_at = 0
     verified = claims.get("email_verified") in (True, "true", "True", 1, "1")
@@ -415,7 +418,10 @@ async def verify_google_credential(credential: str) -> dict[str, Any]:
         or not claims.get("email")
         or not verified
     ):
-        raise HTTPException(status_code=401, detail="Не удалось проверить Google-аккаунт или его адрес электронной почты.")
+        raise HTTPException(
+            status_code=401,
+            detail="Не удалось проверить Google-аккаунт или его адрес электронной почты.",
+        )
 
     return {
         "sub": str(claims["sub"]),
