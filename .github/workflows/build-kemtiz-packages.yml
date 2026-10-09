@@ -113,15 +113,15 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee android-signature.txt
-          SHA1="$(awk '/Signer #1 certificate SHA-1 digest:/{print $NF; exit}' android-signature.txt)"
+          SHA1="$(awk '/certificate SHA-1 digest:/{print $NF; exit}' android-signature.txt)"
           test -n "$SHA1"
-          printf 'Android OAuth SHA-1: %s\n' "$SHA1" | tee Android-OAuth-SHA1.txt
+          SHA1_COLON="$(printf '%s' "$SHA1" | sed 's/../&:/g; s/:$/' | tr '[:lower:]' '[:upper:]')"\nprintf 'SHA-1 for Google Cloud: %s\nRaw SHA-1: %s\n' "$SHA1_COLON" "$SHA1" | tee Android-OAuth-SHA1.txt
           {
             echo "### Android OAuth fingerprint"
             echo
-            echo "\`$SHA1\`"
+            echo "\`$SHA1_COLON\`"
             echo
-            echo "Google Cloud → Android OAuth client → SHA-1 certificate fingerprint."
+            echo "Copy the colon-separated SHA-1 into Google Cloud → Android OAuth client for package com.kemtiz.app."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare Android release files
