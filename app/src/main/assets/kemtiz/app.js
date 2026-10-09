@@ -1,6 +1,7 @@
 (() => {
   "use strict";
 
+  const API_BASE = "https://kemtiz-api.onrender.com";
   const $ = (id) => document.getElementById(id);
   const state = {
     token: localStorage.getItem("kemtiz_token") || "",
@@ -27,7 +28,7 @@
       headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(options.body);
     }
-    const response = await fetch(path, { ...options, headers });
+    const response = await fetch(API_BASE + path, { ...options, headers });
     const raw = await response.text();
     let data = {};
     try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = { detail: raw }; }
@@ -644,8 +645,9 @@
   function connectSocket() {
     if (!state.token || state.manualLogout) return;
     clearTimeout(state.reconnectTimer);
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(protocol + "//" + location.host + "/ws");
+    const socketUrl = new URL("/ws", API_BASE);
+    socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(socketUrl.toString());
     state.socket = socket;
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({ type: "auth", token: state.token }));
@@ -716,7 +718,4 @@
     });
   }
 
-  if ("serviceWorker" in navigator && location.protocol === "https:") {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
-  }
 })();

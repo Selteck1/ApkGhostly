@@ -3,7 +3,7 @@ name: Build Kemtiz Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "kemtiz-messenger" ]
+    branches: [ "main", "kemtiz-messenger" ]
 
 jobs:
   build:

@@ -280,3 +280,35 @@ button:disabled{cursor:default;opacity:.55}
   .composer-bottom span{max-width:75%;line-height:1.4}
   .toast{bottom:calc(env(safe-area-inset-bottom) + 16px)}
 }
+
+
+/* Android app polish */
+html, body {
+  width: 100%;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button, input, textarea { touch-action: manipulation; }
+@media (max-width: 760px) {
+  .auth-shell { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .auth-card {
+    border-color: rgba(177, 151, 255, .2);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .34), inset 0 1px rgba(255,255,255,.035);
+  }
+  .sidebar {
+    background: radial-gradient(ellipse at 15% 0%, rgba(120, 83, 217, .12), transparent 45%), #0b0c12;
+  }
+  .sidebar-top {
+    background: rgba(15, 16, 24, .9);
+    border-bottom: 1px solid rgba(255,255,255,.035);
+  }
+  .profile-strip { box-shadow: 0 8px 26px rgba(0,0,0,.16); }
+  .person-row, .chat-row { min-height: 54px; border-color: rgba(255,255,255,.025); }
+  .conversation-header {
+    background: linear-gradient(110deg, rgba(34, 28, 52, .98), rgba(17, 18, 27, .98));
+  }
+  .composer:focus-within {
+    border-color: rgba(169, 140, 255, .4);
+    box-shadow: 0 0 0 3px rgba(120, 87, 217, .08), 0 12px 35px rgba(0,0,0,.14);
+  }
+}

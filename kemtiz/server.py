@@ -20,12 +20,10 @@ import httpx
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token as google_id_token
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent
-WEB_DIR = ROOT / "web"
 DATA_DIR = Path(os.environ.get("KEMTIZ_DATA_DIR", str(ROOT / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = Path(os.environ.get("KEMTIZ_DB_PATH", str(DATA_DIR / "kemtiz.sqlite3")))
@@ -53,8 +51,14 @@ SECRET = get_secret()
 TOKEN_TTL = 60 * 60 * 24 * 30
 MAX_MESSAGE = 4000
 
-app = FastAPI(title="Kemtiz", version="0.1.0", docs_url="/api/docs", redoc_url=None)
-app.mount("/assets", StaticFiles(directory=str(WEB_DIR)), name="assets")
+app = FastAPI(title="Kemtiz API", version="0.2.0", docs_url=None, redoc_url=None)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://appassets.androidplatform.net"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 
 @contextmanager
@@ -357,12 +361,14 @@ def chat_info(chat_id: int, uid: int) -> dict[str, Any]:
 
 @app.get("/")
 def home():
-    return FileResponse(WEB_DIR / "index.html")
+    return {
+        "ok": True,
+        "app": "Kemtiz API",
+        "client": "android-only",
+        "message": "Используй приложение Kemtiz для Android.",
+    }
 
 
-@app.get("/sw.js")
-def service_worker():
-    return FileResponse(WEB_DIR / "sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/"})
 
 
 @app.get("/health")

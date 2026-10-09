@@ -3,9 +3,9 @@ name: Kemtiz backend checks
 on:
   workflow_dispatch:
   push:
-    branches: [ "kemtiz-messenger" ]
+    branches: [ "main", "kemtiz-messenger" ]
   pull_request:
-    branches: [ "kemtiz-messenger" ]
+    branches: [ "main", "kemtiz-messenger" ]
 
 jobs:
   test:
@@ -24,7 +24,7 @@ jobs:
       - name: Compile backend
         run: python -m compileall -q kemtiz
       - name: Check frontend JavaScript syntax
-        run: node --check kemtiz/web/app.js
+        run: node --check app/src/main/assets/kemtiz/app.js
       - name: Test API flow
         working-directory: kemtiz
         run: python -m unittest -v test_server

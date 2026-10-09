@@ -1,32 +1,21 @@
 package com.kemtiz.app;
 
 import android.app.Activity;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.CancellationSignal;
-import android.webkit.JavascriptInterface;
-import androidx.credentials.Credential;
-import androidx.credentials.CredentialManager;
-import androidx.credentials.CredentialManagerCallback;
-import androidx.credentials.CustomCredential;
-import androidx.credentials.GetCredentialRequest;
-import androidx.credentials.GetCredentialResponse;
-import androidx.credentials.exceptions.GetCredentialException;
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
-import org.json.JSONObject;
-import android.app.AlertDialog;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Bundle;
+import android.os.CancellationSignal;
 import android.view.Gravity;
 import android.view.View;
+import android.webkit.JavascriptInterface;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -34,9 +23,23 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.credentials.Credential;
+import androidx.credentials.CredentialManager;
+import androidx.credentials.CredentialManagerCallback;
+import androidx.credentials.CustomCredential;
+import androidx.credentials.GetCredentialRequest;
+import androidx.credentials.GetCredentialResponse;
+import androidx.credentials.exceptions.GetCredentialException;
+import androidx.webkit.WebViewAssetLoader;
+
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
+
+import org.json.JSONObject;
+
 public class KemtizActivity extends Activity {
-    private static final String PREFS = "kemtiz_settings";
-    private static final String LOCAL_URL = "http://127.0.0.1:8000/";
+    private static final String APP_URL =
+        "https://appassets.androidplatform.net/assets/kemtiz/index.html";
     private static final int BG = Color.rgb(11, 12, 17);
     private static final int PANEL = Color.rgb(24, 25, 36);
     private static final int ACCENT = Color.rgb(132, 98, 220);
@@ -46,6 +49,7 @@ public class KemtizActivity extends Activity {
     private WebView webView;
     private LinearLayout root;
     private LinearLayout errorPanel;
+    private WebViewAssetLoader assetLoader;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -53,19 +57,17 @@ public class KemtizActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(Color.BLACK);
         buildLayout();
-        if (state == null) {
-            loadApp();
-        } else if (webView != null) {
-            webView.restoreState(state);
-        } else {
-            loadApp();
-        }
+        loadApp();
     }
 
     private void buildLayout() {
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
+
+        assetLoader = new WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+            .build();
 
         webView = new WebView(this);
         webView.setBackgroundColor(BG);
@@ -82,6 +84,29 @@ public class KemtizActivity extends Activity {
         webView.addJavascriptInterface(new NativeGoogleBridge(), "KemtizNativeGoogle");
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public WebResourceResponse shouldInterceptRequest(
+                WebView view, WebResourceRequest request
+            ) {
+                return assetLoader.shouldInterceptRequest(request.getUrl());
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if ("https".equalsIgnoreCase(uri.getScheme())
+                    && "appassets.androidplatform.net".equalsIgnoreCase(uri.getHost())) {
+                    return false;
+                }
+                if ("https".equalsIgnoreCase(uri.getScheme())) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                    } catch (Exception ignored) {
+                    }
+                }
+                return true;
+            }
+
+            @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 errorPanel.setVisibility(View.GONE);
                 webView.setVisibility(View.VISIBLE);
@@ -94,14 +119,17 @@ public class KemtizActivity extends Activity {
             }
 
             @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            public void onReceivedError(
+                WebView view, WebResourceRequest request, WebResourceError error
+            ) {
                 if (request.isForMainFrame()) showServerError();
             }
 
             @Override
-            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+            public void onReceivedSslError(
+                WebView view, SslErrorHandler handler, SslError error
+            ) {
                 handler.cancel();
-                showServerError();
             }
         });
 
@@ -125,29 +153,17 @@ public class KemtizActivity extends Activity {
         errorPanel.addView(title, titleLp);
 
         TextView description = label(
-            "Сервер пока не запущен на этом телефоне.\nЗапусти backend в Termux, затем нажми «Повторить».",
+            "Не удалось открыть интерфейс Kemtiz.\\nПерезапусти приложение или установи APK заново.",
             14, MUTED, Gravity.CENTER);
         LinearLayout.LayoutParams descLp = wrap();
         descLp.topMargin = dp(12);
         errorPanel.addView(description, descLp);
 
-        Button server = button("⚙  Адрес сервера");
-        LinearLayout.LayoutParams serverLp = match();
-        serverLp.topMargin = dp(20);
-        errorPanel.addView(server, serverLp);
-        server.setOnClickListener(v -> editServerUrl());
-
-        Button help = button("Как запустить сервер");
-        LinearLayout.LayoutParams helpLp = match();
-        helpLp.topMargin = dp(8);
-        errorPanel.addView(help, helpLp);
-        help.setOnClickListener(v -> showHelp());
-
-        Button retry = button("↻  Повторить подключение");
+        Button retry = button("↻  Повторить запуск");
         retry.setBackground(round(ACCENT, 14));
         retry.setTextColor(Color.WHITE);
         LinearLayout.LayoutParams retryLp = match();
-        retryLp.topMargin = dp(10);
+        retryLp.topMargin = dp(22);
         errorPanel.addView(retry, retryLp);
         retry.setOnClickListener(v -> loadApp());
 
@@ -170,7 +186,6 @@ public class KemtizActivity extends Activity {
             sendGoogleError("Google-вход не настроен. Добавь OAuth Client ID в настройки сервера.");
             return;
         }
-
         try {
             GetGoogleIdOption googleOption = new GetGoogleIdOption.Builder()
                 .setServerClientId(clientId.trim())
@@ -191,10 +206,12 @@ public class KemtizActivity extends Activity {
                     public void onResult(GetCredentialResponse response) {
                         Credential credential = response.getCredential();
                         if (credential instanceof CustomCredential
-                            && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
+                            && GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(
+                                credential.getType())) {
                             try {
                                 GoogleIdTokenCredential googleCredential =
-                                    GoogleIdTokenCredential.createFrom(((CustomCredential) credential).getData());
+                                    GoogleIdTokenCredential.createFrom(
+                                        ((CustomCredential) credential).getData());
                                 sendGoogleCredential(googleCredential.getIdToken());
                             } catch (Exception error) {
                                 sendGoogleError("Не удалось прочитать Google-аккаунт. Попробуй ещё раз.");
@@ -206,7 +223,8 @@ public class KemtizActivity extends Activity {
 
                     @Override
                     public void onError(GetCredentialException error) {
-                        sendGoogleError("Вход через Google отменён или не завершён. Попробуй выбрать аккаунт ещё раз.");
+                        sendGoogleError(
+                            "Вход через Google отменён или не завершён. Попробуй выбрать аккаунт ещё раз.");
                     }
                 }
             );
@@ -232,7 +250,8 @@ public class KemtizActivity extends Activity {
     }
 
     private void sendGoogleError(String message) {
-        String quoted = JSONObject.quote(message == null ? "Не удалось войти через Google." : message);
+        String quoted = JSONObject.quote(
+            message == null ? "Не удалось войти через Google." : message);
         runOnUiThread(() -> {
             if (webView != null) {
                 webView.evaluateJavascript(
@@ -243,55 +262,10 @@ public class KemtizActivity extends Activity {
         });
     }
 
-    private String serverUrl() {
-        String value = getSharedPreferences(PREFS, MODE_PRIVATE)
-            .getString("server_url", LOCAL_URL).trim();
-        if (value.isEmpty()) value = LOCAL_URL;
-        return value.endsWith("/") ? value : value + "/";
-    }
-
     private void loadApp() {
         errorPanel.setVisibility(View.GONE);
         webView.setVisibility(View.VISIBLE);
-        webView.loadUrl(serverUrl());
-    }
-
-    private void editServerUrl() {
-        android.widget.EditText input = new android.widget.EditText(this);
-        input.setSingleLine(true);
-        input.setText(serverUrl());
-        input.setHint("https://your-server.example");
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
-            android.text.InputType.TYPE_TEXT_VARIATION_URI);
-
-        new AlertDialog.Builder(this)
-            .setTitle("Адрес сервера Kemtiz")
-            .setMessage("На этом телефоне используй http://127.0.0.1:8000/. Для удалённого сервера нужен HTTPS.")
-            .setView(input)
-            .setNegativeButton("Отмена", null)
-            .setPositiveButton("Сохранить", (dialog, which) -> {
-                String value = input.getText().toString().trim();
-                if (value.isEmpty()) {
-                    return;
-                }
-                if (!value.startsWith("http://") && !value.startsWith("https://")) {
-                    value = "https://" + value;
-                }
-                Uri uri = Uri.parse(value);
-                String host = uri.getHost();
-                boolean localHttp = "http".equals(uri.getScheme()) &&
-                    ("127.0.0.1".equals(host) || "localhost".equals(host));
-                if (host == null || (!"https".equals(uri.getScheme()) && !localHttp)) {
-                    new AlertDialog.Builder(this)
-                        .setMessage("Разрешены HTTPS-адреса или локальный адрес http://127.0.0.1:8000/.")
-                        .setPositiveButton("ОК", null).show();
-                    return;
-                }
-                String base = uri.buildUpon().path("/").query(null).fragment(null).build().toString();
-                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("server_url", base).apply();
-                loadApp();
-            })
-            .show();
+        webView.loadUrl(APP_URL);
     }
 
     private void showServerError() {
@@ -301,21 +275,6 @@ public class KemtizActivity extends Activity {
         });
     }
 
-    private void showHelp() {
-        new AlertDialog.Builder(this)
-            .setTitle("Запуск Kemtiz")
-            .setMessage(
-                "1. Открой Termux.\n\n" +
-                "2. Перейди в папку проекта.\n\n" +
-                "3. Активируй окружение и выполни:\n" +
-                "cd kemtiz && uvicorn server:app --host 127.0.0.1 --port 8000\n\n" +
-                "4. Не закрывай Termux, пока тестируешь мессенджер.\n\n" +
-                "Когда сервер запустится, вернись сюда и нажми «Повторить подключение»."
-            )
-            .setPositiveButton("Понятно", null)
-            .show();
-    }
-
     @Override
     public void onBackPressed() {
         if (webView != null && webView.getVisibility() == View.VISIBLE && webView.canGoBack()) {
@@ -323,24 +282,6 @@ public class KemtizActivity extends Activity {
         } else {
             super.onBackPressed();
         }
-    }
-
-    @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        if (webView != null) webView.saveState(outState);
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (webView != null) {
-            webView.stopLoading();
-            webView.setWebChromeClient(null);
-            webView.setWebViewClient(null);
-            webView.destroy();
-            webView = null;
-        }
-        super.onDestroy();
     }
 
     private TextView label(String text, float size, int color, int gravity) {
@@ -365,10 +306,11 @@ public class KemtizActivity extends Activity {
     }
 
     private android.graphics.drawable.GradientDrawable round(int color, int radius) {
-        android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(dp(radius));
-        return d;
+        android.graphics.drawable.GradientDrawable drawable =
+            new android.graphics.drawable.GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(radius));
+        return drawable;
     }
 
     private LinearLayout.LayoutParams match() {

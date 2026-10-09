@@ -76,6 +76,26 @@ class KemtizApiTests(unittest.TestCase):
         self.assertNotIn("password", data["user"])
         return credential, identity, data, data["token"]
 
+    def test_root_is_android_api_not_a_website(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["client"], "android-only")
+        self.assertEqual(response.json()["app"], "Kemtiz API")
+
+    def test_android_webview_origin_is_allowed_by_cors(self):
+        response = self.client.options(
+            "/api/config",
+            headers={
+                "Origin": "https://appassets.androidplatform.net",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            response.headers.get("access-control-allow-origin"),
+            "https://appassets.androidplatform.net",
+        )
+
     def setUp(self):
         self.alice_credential, self.alice_identity, self.alice_data, self.alice_token = self.create_account("Alice")
         self.bob_credential, self.bob_identity, self.bob_data, self.bob_token = self.create_account("Bob")
