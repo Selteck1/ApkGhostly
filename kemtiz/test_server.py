@@ -1,6 +1,5 @@
 import os
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -9,8 +8,9 @@ TEST_DATA = tempfile.mkdtemp(prefix="kemtiz-test-")
 os.environ["KEMTIZ_DATA_DIR"] = TEST_DATA
 os.environ["KEMTIZ_DB_PATH"] = str(Path(TEST_DATA) / "test.sqlite3")
 os.environ["KEMTIZ_SECRET"] = "test-only-secret-change-me-1234567890"
-os.environ["SMSRU_API_ID"] = "test-api-id"
+os.environ["KEMTIZ_GOOGLE_CLIENT_ID"] = "kemtiz-test.apps.googleusercontent.com"
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import server as server_module
 from server import app
@@ -19,66 +19,122 @@ from server import app
 class KemtizApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.sent_codes = {}
-        cls.phone_counter = 0
+        cls.credentials = {}
+        cls.identity_counter = 0
 
-        async def fake_send_sms(phone, code):
-            cls.sent_codes[phone] = code
+        async def fake_verify_google_credential(credential):
+            identity = cls.credentials.get(credential)
+            if identity is None:
+                raise HTTPException(status_code=401, detail="Fake Google credential rejected.")
+            return dict(identity)
 
-        cls.sms_patcher = patch.object(server_module, "send_sms_code", new=fake_send_sms)
-        cls.sms_patcher.start()
+        cls.google_patcher = patch.object(
+            server_module,
+            "verify_google_credential",
+            new=fake_verify_google_credential,
+        )
+        cls.google_patcher.start()
         cls.client_context = TestClient(app)
         cls.client = cls.client_context.__enter__()
 
     @classmethod
     def tearDownClass(cls):
         cls.client_context.__exit__(None, None, None)
-        cls.sms_patcher.stop()
+        cls.google_patcher.stop()
 
     @classmethod
-    def new_phone(cls):
-        cls.phone_counter += 1
-        return "+7910" + f"{cls.phone_counter:07d}"
+    def create_identity(cls, name):
+        cls.identity_counter += 1
+        suffix = f"{cls.identity_counter:05d}"
+        credential = "test-google-credential-" + suffix + "-" + name.lower()
+        identity = {
+            "sub": "google-sub-" + suffix,
+            "email": name.lower() + "." + suffix + "@gmail.com",
+            "name": name,
+            "picture": "https://lh3.googleusercontent.com/test-" + suffix,
+        }
+        cls.credentials[credential] = identity
+        return credential, identity
 
-    def create_account(self):
-        phone = self.new_phone()
-        sent = self.client.post("/api/auth/request-code", json={"phone": phone})
-        self.assertEqual(sent.status_code, 200, sent.text)
-        self.assertEqual(sent.json()["phone"], phone)
-
-        verified = self.client.post("/api/auth/verify-code", json={
-            "phone": phone,
-            "code": self.sent_codes[phone]
+    def create_account(self, name):
+        credential, identity = self.create_identity(name)
+        username = name.lower() + "_" + str(self._testMethodName.__hash__() & 0xffff)
+        # A unique suffix makes users independent even when tests run more than once.
+        username = (username + "_" + str(self.id().__hash__() & 0xffff))[:24]
+        response = self.client.post("/api/auth/google/finish", json={
+            "credential": credential,
+            "username": username,
+            "country": "Россия",
+            "about": "Test profile"
         })
-        self.assertEqual(verified.status_code, 200, verified.text)
-        data = verified.json()
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
         self.assertIn("token", data)
-        self.assertNotIn("phone_number", data["user"])
-        return phone, data, data["token"]
+        self.assertEqual(data["user"]["email"], identity["email"])
+        self.assertEqual(data["user"]["display_name"], name)
+        self.assertEqual(data["user"]["username"], username)
+        self.assertNotIn("password", data["user"])
+        return credential, identity, data, data["token"]
 
     def setUp(self):
-        self.alice_phone, self.alice_data, self.alice_token = self.create_account()
-        self.bob_phone, self.bob_data, self.bob_token = self.create_account()
+        self.alice_credential, self.alice_identity, self.alice_data, self.alice_token = self.create_account("Alice")
+        self.bob_credential, self.bob_identity, self.bob_data, self.bob_token = self.create_account("Bob")
 
     def auth(self, token):
         return {"Authorization": "Bearer " + token}
 
-    def test_registration_and_phone_login(self):
-        user_id = self.alice_data["user"]["id"]
-        with server_module.db() as c:
-            c.execute(
-                "UPDATE auth_rate_limits SET last_sent_at=? WHERE phone_number=?",
-                (int(time.time()) - 61, self.alice_phone),
-            )
-
-        sent = self.client.post("/api/auth/request-code", json={"phone": self.alice_phone})
-        self.assertEqual(sent.status_code, 200, sent.text)
-        logged_in = self.client.post("/api/auth/verify-code", json={
-            "phone": self.alice_phone,
-            "code": self.sent_codes[self.alice_phone]
+    def test_google_login_returns_existing_user(self):
+        response = self.client.post("/api/auth/google/start", json={
+            "credential": self.alice_credential
         })
-        self.assertEqual(logged_in.status_code, 200, logged_in.text)
-        self.assertEqual(logged_in.json()["user"]["id"], user_id)
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertFalse(result["needs_profile"])
+        self.assertEqual(result["user"]["id"], self.alice_data["user"]["id"])
+        self.assertIn("token", result)
+
+    def test_new_google_identity_requires_profile_then_registers(self):
+        credential, identity = self.create_identity("Charlie")
+        start = self.client.post("/api/auth/google/start", json={"credential": credential})
+        self.assertEqual(start.status_code, 200, start.text)
+        self.assertTrue(start.json()["needs_profile"])
+        self.assertEqual(start.json()["profile"]["email"], identity["email"])
+
+        finish = self.client.post("/api/auth/google/finish", json={
+            "credential": credential,
+            "username": "charlie_" + identity["sub"][-5:],
+            "country": "Германия",
+            "about": "Привет, Kemtiz!"
+        })
+        self.assertEqual(finish.status_code, 200, finish.text)
+        self.assertEqual(finish.json()["user"]["country"], "Германия")
+        self.assertEqual(finish.json()["user"]["about"], "Привет, Kemtiz!")
+
+    def test_email_is_private_in_public_user_search(self):
+        response = self.client.get(
+            "/api/users/search?q=alice",
+            headers=self.auth(self.bob_token),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(response.json()), 1)
+        self.assertNotIn("email", response.json()[0])
+        self.assertIn("avatar_url", response.json()[0])
+
+    def test_invalid_google_username_is_rejected(self):
+        credential, _ = self.create_identity("Delta")
+        response = self.client.post("/api/auth/google/finish", json={
+            "credential": credential,
+            "username": "invalid username",
+            "country": "",
+            "about": ""
+        })
+        self.assertEqual(response.status_code, 422)
+
+    def test_unverified_google_credential_is_rejected(self):
+        response = self.client.post("/api/auth/google/start", json={
+            "credential": "unknown-google-credential-token"
+        })
+        self.assertEqual(response.status_code, 401)
 
     def test_friend_request_direct_chat_and_message(self):
         bob_username = self.bob_data["user"]["username"]
@@ -130,17 +186,6 @@ class KemtizApiTests(unittest.TestCase):
             headers=self.auth(self.alice_token)
         )
         self.assertEqual(response.status_code, 403)
-
-    def test_code_format_is_validated(self):
-        response = self.client.post("/api/auth/verify-code", json={
-            "phone": self.alice_phone,
-            "code": "12ab"
-        })
-        self.assertEqual(response.status_code, 422)
-
-    def test_sms_requests_are_rate_limited(self):
-        response = self.client.post("/api/auth/request-code", json={"phone": self.alice_phone})
-        self.assertEqual(response.status_code, 429)
 
 
 if __name__ == "__main__":
