@@ -51,6 +51,7 @@ public class MainActivity extends Activity {
     private static final int BG=Color.rgb(10,14,27),SURFACE=Color.rgb(21,28,47),SURFACE2=Color.rgb(29,38,61);
     private static final int FG=Color.rgb(241,244,255),MUTED=Color.rgb(158,170,197),PURPLE=Color.rgb(167,139,250),MINT=Color.rgb(77,226,197);
     private AppDb db;private SharedPreferences prefs;private LinearLayout root,page;private ScrollView scroll;private boolean adminSession=false;
+    private String sessionAdminPassword="";
     private Block draft;private ArrayList<String> draftPhotos=new ArrayList<>();private EditText edTitle,edMap,edCategory,edSide,edDescription;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private volatile boolean databaseUnlocked=false, checkingUpdates=false, checkingRevision=false;
@@ -58,7 +59,7 @@ public class MainActivity extends Activity {
     private final Runnable gatePoll=new Runnable(){@Override public void run(){if(!databaseUnlocked)return;pollCatalogRevision();gateHandler.postDelayed(this,60000L);}};
 
     @Override protected void onCreate(Bundle state){super.onCreate(state);Window w=getWindow();w.setStatusBarColor(Color.rgb(9,13,24));w.setNavigationBarColor(Color.rgb(9,13,24));w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        db=new AppDb(this);prefs=getSharedPreferences("lineup_settings",MODE_PRIVATE);root=new InsetRoot(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);setContentView(root);showUpdateGate("Проверяю, опубликована ли новая версия базы…",null);checkUpdates(true);}
+        db=new AppDb(this);prefs=getSharedPreferences("lineup_settings",MODE_PRIVATE);root=new InsetRoot(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);setContentView(root);showAdminLogin();}
     @Override protected void onResume(){super.onResume();if(databaseUnlocked){gateHandler.removeCallbacks(gatePoll);gateHandler.postDelayed(gatePoll,15000L);}}
     @Override protected void onPause(){gateHandler.removeCallbacks(gatePoll);super.onPause();}
     @Override protected void onDestroy(){gateHandler.removeCallbacks(gatePoll);worker.shutdownNow();db.close();super.onDestroy();}
@@ -83,11 +84,9 @@ public class MainActivity extends Activity {
     private EditText field(String hint,String value,boolean multi){EditText e=new EditText(this);e.setSingleLine(!multi);e.setHint(hint);e.setText(value==null?"":value);e.setTextColor(FG);e.setHintTextColor(MUTED);e.setTextSize(15);e.setPadding(dp(13),dp(12),dp(13),dp(12));e.setBackground(shape(SURFACE2,Color.rgb(55,66,97),13));
         if(multi){e.setGravity(Gravity.TOP|Gravity.START);e.setMinLines(4);e.setMaxLines(12);e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);}else e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         LinearLayout.LayoutParams p=lp(-1,multi?124:50);p.bottomMargin=dp(10);page.addView(e,p);return e;}
-    private void showHome(){if(!databaseUnlocked){showUpdateGate("Сначала нужно проверить и обновить общую базу.",null);return;}adminSession=false;shell("LINEUP","ОФЛАЙН-СПРАВОЧНИК STANDOFF 2",false,null);addText("Тактики под рукой.",27,FG,true,2,5);addText("Сохрани раскидки заранее — смотри фото и инструкции даже без интернета.",14,MUTED,false,0,18);
-        int count=db.list("").size();LinearLayout stats=row();stats.setPadding(dp(14),dp(13),dp(14),dp(13));stats.setBackground(shape(Color.rgb(18,33,50),Color.rgb(39,70,80),16));LinearLayout left=column();left.addView(text(String.valueOf(count),24,MINT,true));left.addView(text("блоков на устройстве",12,MUTED,false));stats.addView(left,new LinearLayout.LayoutParams(0,-2,1));TextView off=text("● ОФЛАЙН",11,MINT,true);off.setGravity(Gravity.CENTER);stats.addView(off);page.addView(stats,lp(-1,-2));gap(16);
-        addButton("📚  Открыть все блоки",()->showList(""),true);addButton("⬇  Проверить обновления",this::checkUpdates,false);addButton("＋  Импортировать пакет с устройства",this::pickImport,false);addButton("⚙  Администратор",this::openAdmin,false);
-        addText("Недавно добавленные",17,FG,true,15,10);List<Block> latest=db.list("");if(latest.isEmpty())addCard(text("Здесь появятся твои раскидки. Открой режим администратора и создай первый блок.",14,MUTED,false));else for(int i=0;i<Math.min(4,latest.size());i++)addBlockCard(latest.get(i));
-        addText("Обновления скачиваются отдельно от APK. Установленные материалы работают офлайн.",11,MUTED,false,8,0);}
+    private void showHome(){
+        if(adminSession)showAdminMenu();else showAdminLogin();
+    }
     private void showList(String query){shell("Блоки",query==null||query.isEmpty()?"ВСЯ СОХРАНЁННАЯ БАЗА":"РЕЗУЛЬТАТЫ ПОИСКА",true,this::showHome);EditText search=field("Поиск по названию, карте или описанию",query,false);addButton("Найти",()->showList(search.getText().toString().trim()),true);
         addText("Быстрые фильтры",16,FG,true,4,8);addButton("Все материалы",()->showList(""),false);addButton("Раскидки",()->showList("Раскидка"),false);addButton("Тактики",()->showList("Тактика"),false);addButton("Командные схемы",()->showList("Команда"),false);addText("Материалы",16,FG,true,8,8);
         List<Block> list=db.list(query);if(list.isEmpty())addCard(text("Ничего не найдено. Попробуй другой запрос или создай первый блок.",14,MUTED,false));else for(Block b:list)addBlockCard(b);}
@@ -99,12 +98,52 @@ public class MainActivity extends Activity {
         if(adminSession){gap(4);addButton("Изменить блок",()->startEditor(b),true);addButton("Удалить блок",()->confirmDelete(b),false);}addButton("← К списку",()->showList(""),false);}
     private Bitmap decodeSampled(String path,int reqW,int reqH){try{BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(path,bounds);int sample=1;while(bounds.outWidth/sample>reqW*2||bounds.outHeight/sample>reqH*2)sample*=2;BitmapFactory.Options o=new BitmapFactory.Options();o.inSampleSize=sample;o.inPreferredConfig=Bitmap.Config.RGB_565;return BitmapFactory.decodeFile(path,o);}catch(Throwable ignored){return null;}}
     private void confirmDelete(Block b){new AlertDialog.Builder(this).setTitle("Удалить блок?").setMessage("«"+b.title+"» будет удалён с этого устройства.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{db.delete(b.rowId);Toast.makeText(this,"Блок удалён",Toast.LENGTH_SHORT).show();showList("");}).show();}
-    private void openAdmin(){String saved=prefs.getString("admin_pin_hash","");EditText pin=new EditText(this);pin.setHint(saved.isEmpty()?"Придумай PIN от 6 цифр":"PIN администратора");pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setTextColor(FG);pin.setHintTextColor(MUTED);pin.setPadding(dp(12),dp(10),dp(12),dp(10));pin.setBackground(shape(SURFACE2,PURPLE,12));
-        LinearLayout box=column();box.setPadding(dp(4),dp(8),dp(4),dp(3));box.addView(text(saved.isEmpty()?"Создай локальный PIN. Он защищает редактирование на этом устройстве.":"Введи PIN, чтобы открыть инструменты администратора.",13,MUTED,false));box.addView(new View(this),lp(1,10));box.addView(pin,lp(-1,50));
-        new AlertDialog.Builder(this).setTitle(saved.isEmpty()?"Регистрация администратора":"Вход администратора").setView(box).setNegativeButton("Отмена",null).setPositiveButton(saved.isEmpty()?"Создать PIN":"Войти",(d,w)->{String value=pin.getText().toString().trim();if(saved.isEmpty()){if(value.length()<6){Toast.makeText(this,"PIN должен содержать минимум 6 цифр",Toast.LENGTH_LONG).show();return;}prefs.edit().putString("admin_pin_hash",hashPin(value)).apply();adminSession=true;showAdminMenu();}else if(hashPin(value).equals(saved)){adminSession=true;showAdminMenu();}else Toast.makeText(this,"Неверный PIN",Toast.LENGTH_SHORT).show();}).show();}
-    private String hashPin(String value){try{byte[] bytes=MessageDigest.getInstance("SHA-256").digest((getPackageName()+":lineup:"+value).getBytes(StandardCharsets.UTF_8));StringBuilder s=new StringBuilder();for(byte b:bytes)s.append(String.format(Locale.ROOT,"%02x",b&255));return s.toString();}catch(Exception e){return value;}}
-    private void showAdminMenu(){shell("Администратор","УПРАВЛЕНИЕ ЛОКАЛЬНЫМИ МАТЕРИАЛАМИ",true,this::showHome);addText("Редактор контента",20,FG,true,2,6);addText("Создавай материалы на телефоне. Чтобы поделиться ими со всеми, экспортируй пакет и загрузи его в репозиторий контента.",13,MUTED,false,0,18);
-        addButton("＋  Создать блок",()->startEditor(null),true);addButton("✎  Изменить существующий блок",()->showList(""),false);addButton("🌐  Опубликовать базу для всех устройств",this::publishDatabase,true);addButton("⇧  Экспортировать пакет .lineup",this::pickExport,false);addButton("⇩  Импортировать пакет .lineup",this::pickImport,false);addButton("Выйти из режима администратора",()->{adminSession=false;showHome();},false);}
+    private void openAdmin(){showAdminLogin();}
+
+    private void showAdminLogin(){
+        adminSession=false;sessionAdminPassword="";
+        shell("LINEUP ADMIN","УПРАВЛЕНИЕ КОНТЕНТОМ",false,null);
+        addText("Вход администратора",24,FG,true,4,8);
+        addText("Ввод пароля открывает редактор блоков. Сохранённые на этом устройстве материалы не пропадут при выходе.",14,MUTED,false,0,16);
+        EditText password=field("Пароль администратора","",false);
+        password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        addButton("Войти",()->{
+            String value=password.getText().toString();
+            if(hashPin(value).equals("178e7b310fb66370afa9cc1d17d0ad4e8f0aa22be82abd1a1c5cfa6598fb11db")){
+                adminSession=true;sessionAdminPassword=value;showAdminMenu();
+            }else{
+                Toast.makeText(this,"Неверный пароль",Toast.LENGTH_SHORT).show();
+            }
+        },true);
+        addText("Пароль хранится в виде хэша в интерфейсе. Не распространяй APK администратора — для пользователей предназначена отдельная сборка.",11,MUTED,false,12,0);
+    }
+
+    private String hashPin(String value){
+        try{
+            byte[] bytes=MessageDigest.getInstance("SHA-256").digest(("lineup-admin:"+value).getBytes(StandardCharsets.UTF_8));
+            StringBuilder result=new StringBuilder();
+            for(byte b:bytes)result.append(String.format(Locale.ROOT,"%02x",b&255));
+            return result.toString();
+        }catch(Exception e){return "";}
+    }
+
+    private void showAdminMenu(){
+        shell("Администратор","РЕДАКТОР И СБОРКА БАЗЫ",true,this::showAdminLogin);
+        addText("Твоя база раскидок",24,FG,true,3,6);
+        addText("Блоки и фотографии сначала сохраняются локально. Кнопка сборки отправляет базу и запускает сборку отдельного APK для игроков.",14,MUTED,false,0,16);
+        LinearLayout stats=row();stats.setPadding(dp(14),dp(13),dp(14),dp(13));stats.setBackground(shape(Color.rgb(18,33,50),Color.rgb(39,70,80),16));
+        LinearLayout left=column();left.addView(text(String.valueOf(db.list("").size()),24,MINT,true));left.addView(text("сохранённых блоков",12,MUTED,false));
+        stats.addView(left,new LinearLayout.LayoutParams(0,-2,1));TextView offline=text("● ЛОКАЛЬНО",11,MINT,true);offline.setGravity(Gravity.CENTER);stats.addView(offline);page.addView(stats,lp(-1,-2));gap(16);
+        addButton("＋  Добавить блок",()->startEditor(null),true);
+        addButton("✎  Все блоки / редактировать",()->showList(""),false);
+        addButton("⚒  Собрать новое APK для игроков",this::publishDatabase,true);
+        addButton("🔒  Заблокировать прошлые версии",this::lockPreviousVersion,false);
+        addButton("✈  Изменить ссылку Telegram",this::changeTelegramLink,false);
+        addButton("⬇  Скачать собранное приложение",this::openBuildPage,false);
+        addButton("Экспортировать резервную копию .lineup",this::pickExport,false);
+        addButton("Выйти из администратора",()->{adminSession=false;sessionAdminPassword="";showAdminLogin();},false);
+    }
+
     private void startEditor(Block existing){draft=existing==null?new Block():existing.copy();draftPhotos=new ArrayList<>(existing==null?new ArrayList<>():existing.photos);showEditor();}
     private void showEditor(){shell(draft.rowId==0?"Новый блок":"Редактирование","НАЗВАНИЕ, КАРТА, ОПИСАНИЕ И ФОТО",true,()->{if(draft.rowId>0)showDetail(draft.rowId);else showAdminMenu();});
         addText("Название блока *",12,MUTED,true,0,5);edTitle=field("Например: Смок на мид",draft.title,false);addText("Карта",12,MUTED,true,0,5);edMap=field("Название карты",draft.map,false);
@@ -141,31 +180,17 @@ public class MainActivity extends Activity {
 
 
     private void publishDatabase(){
-        if(!adminSession){Toast.makeText(this,"Сначала войди как администратор",Toast.LENGTH_SHORT).show();return;}
-        EditText key=new EditText(this);
-        key.setSingleLine(true);
-        key.setHint("Ключ публикации Lineup");
-        key.setText(prefs.getString("publisher_key",""));
-        key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        key.setTextColor(FG);
-        key.setHintTextColor(MUTED);
-        key.setPadding(dp(12),dp(10),dp(12),dp(10));
-        key.setBackground(shape(SURFACE2,PURPLE,12));
-        LinearLayout box=column();
-        box.setPadding(dp(4),dp(8),dp(4),dp(3));
-        box.addView(text("Пакет со всеми блоками и фотографиями будет загружен на сервер, а GitHub автоматически опубликует новую обязательную ревизию для всех устройств.",13,MUTED,false));
-        box.addView(new View(this),lp(1,12));
-        box.addView(key,lp(-1,50));
-        new AlertDialog.Builder(this).setTitle("Опубликовать общую базу")
-            .setView(box).setNegativeButton("Отмена",null)
-            .setPositiveButton("Опубликовать",(dialog,which)->{
-                String secret=key.getText().toString().trim();
-                if(secret.isEmpty()){
-                    Toast.makeText(this,"Введи ключ публикации",Toast.LENGTH_LONG).show();
-                    return;
-                }
-                sendPublishedDatabase(secret);
-            }).show();
+        if(!adminSession||sessionAdminPassword.isEmpty()){showAdminLogin();return;}
+        List<Block> blocks=db.list("");
+        if(blocks.isEmpty()){
+            new AlertDialog.Builder(this).setTitle("Нет блоков")
+                .setMessage("Сначала добавь хотя бы один блок, заполни описание и сохрани его.")
+                .setPositiveButton("Понятно",null).show();return;
+        }
+        new AlertDialog.Builder(this).setTitle("Собрать новое APK?")
+            .setMessage("Будут опубликованы "+blocks.size()+" блоков с фотографиями. GitHub Actions соберёт отдельное приложение для игроков с этой базой.")
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton("Собрать",(dialog,which)->sendPublishedDatabase(sessionAdminPassword)).show();
     }
 
     private void sendPublishedDatabase(String secret){
@@ -207,7 +232,7 @@ public class MainActivity extends Activity {
                         error=response.optString("detail","Сервер не подтвердил публикацию.");
                     }else{
                         commit=response.optString("commit","");
-                        prefs.edit().putString("publisher_key",secret).apply();
+                        prefs.edit().putString("publisher_key_saved","true").apply();
                     }
                 }finally{connection.disconnect();}
             }catch(Exception e){
@@ -227,6 +252,73 @@ public class MainActivity extends Activity {
                 }
             });
         });
+    }
+
+
+    private void lockPreviousVersion(){
+        if(!adminSession||sessionAdminPassword.isEmpty()){showAdminLogin();return;}
+        new AlertDialog.Builder(this).setTitle("Заблокировать предыдущие версии?")
+            .setMessage("Старые приложения после проверки интернета покажут экран обновления и ссылку на Telegram. Последняя собранная версия останется доступна, если её ревизия совпадает с новой политикой.")
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton("Заблокировать",(d,w)->{
+                Toast.makeText(this,"Отправляю новую политику…",Toast.LENGTH_SHORT).show();
+                worker.execute(()->{
+                    String error=null,responseText="";
+                    try{
+                        java.net.HttpURLConnection connection=(java.net.HttpURLConnection)new URL(PUBLISH_API_BASE+"/policy/lock").openConnection();
+                        connection.setRequestMethod("POST");connection.setConnectTimeout(15000);connection.setReadTimeout(30000);
+                        connection.setDoOutput(true);connection.setRequestProperty("X-Lineup-Admin-Key",sessionAdminPassword);
+                        connection.setRequestProperty("Content-Type","application/json");connection.setFixedLengthStreamingMode(2);
+                        try(OutputStream out=connection.getOutputStream()){out.write("{}".getBytes(StandardCharsets.UTF_8));}
+                        int status=connection.getResponseCode();InputStream stream=status>=200&&status<300?connection.getInputStream():connection.getErrorStream();
+                        if(stream!=null)try(InputStream in=stream){responseText=new String(PackManager.readLimited(in,512*1024),StandardCharsets.UTF_8);}
+                        if(status<200||status>=300){try{error=new JSONObject(responseText).optString("detail","Сервер ответил HTTP "+status);}catch(Exception ex){error="Сервер ответил HTTP "+status;}}
+                    }catch(Exception ex){error=ex.getMessage()==null?ex.getClass().getSimpleName():ex.getMessage();}
+                    final String failure=error,body=responseText;
+                    runOnUiThread(()->{
+                        if(failure!=null)new AlertDialog.Builder(this).setTitle("Не удалось заблокировать версии").setMessage(failure+"\n\nПроверь, что сервер настроен и LINEUP_GITHUB_TOKEN добавлен в Render.").setPositiveButton("Понятно",null).show();
+                        else {String revision="";try{revision="Минимальная ревизия: "+new JSONObject(body).optLong("minClientRevision",-1);}catch(Exception ignored){}
+                            new AlertDialog.Builder(this).setTitle("Политика обновления опубликована").setMessage(revision+"\nСтарые APK будут заблокированы при следующей онлайн-проверке. GitHub Actions соберёт APK, совместимый с этой ревизией.").setPositiveButton("Готово",null).show();}
+                    });
+                });
+            }).show();
+    }
+
+    private void changeTelegramLink(){
+        if(!adminSession||sessionAdminPassword.isEmpty()){showAdminLogin();return;}
+        EditText link=field("https://t.me/your_channel",prefs.getString("telegram_url","https://t.me/"));
+        new AlertDialog.Builder(this).setTitle("Ссылка обновления в Telegram").setMessage("Эта ссылка будет открываться в приложении игрока, когда его версия заблокирована.")
+            .setView(link).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(d,w)->{
+                String value=link.getText().toString().trim();
+                try{
+                    Uri uri=Uri.parse(value);
+                    if(!"https".equalsIgnoreCase(uri.getScheme())||uri.getHost()==null||
+                        !(uri.getHost().equalsIgnoreCase("t.me")||uri.getHost().equalsIgnoreCase("www.t.me")||uri.getHost().equalsIgnoreCase("telegram.me")||uri.getHost().equalsIgnoreCase("www.telegram.me"))){
+                        Toast.makeText(this,"Нужна HTTPS-ссылка на t.me или telegram.me",Toast.LENGTH_LONG).show();return;
+                    }
+                }catch(Exception ex){Toast.makeText(this,"Неправильная ссылка",Toast.LENGTH_SHORT).show();return;}
+                prefs.edit().putString("telegram_url",value).apply();
+                worker.execute(()->{
+                    String error=null;
+                    try{
+                        JSONObject body=new JSONObject();body.put("telegramUrl",value);
+                        byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);
+                        java.net.HttpURLConnection connection=(java.net.HttpURLConnection)new URL(PUBLISH_API_BASE+"/policy/telegram").openConnection();
+                        connection.setRequestMethod("POST");connection.setConnectTimeout(15000);connection.setReadTimeout(30000);connection.setDoOutput(true);
+                        connection.setRequestProperty("X-Lineup-Admin-Key",sessionAdminPassword);connection.setRequestProperty("Content-Type","application/json");connection.setFixedLengthStreamingMode(bytes.length);
+                        try(OutputStream out=connection.getOutputStream()){out.write(bytes);}
+                        int status=connection.getResponseCode();if(status<200||status>=300){InputStream stream=connection.getErrorStream();String msg="HTTP "+status;if(stream!=null)try(InputStream in=stream){msg=new String(PackManager.readLimited(in,512*1024),StandardCharsets.UTF_8);}error=msg;}
+                        connection.disconnect();
+                    }catch(Exception ex){error=ex.getMessage()==null?ex.getClass().getSimpleName():ex.getMessage();}
+                    final String failure=error;
+                    runOnUiThread(()->Toast.makeText(this,failure==null?"Ссылка сохранена на сервере":"Ссылка сохранена локально, но сервер не обновлён: "+failure,Toast.LENGTH_LONG).show());
+                });
+            }).show();
+    }
+
+    private void openBuildPage(){
+        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/Selteck1/ApkGhostly/actions/workflows/client-release.yml")));}
+        catch(Exception e){Toast.makeText(this,"Открой Actions в репозитории GitHub",Toast.LENGTH_SHORT).show();}
     }
 
     private void checkUpdates(){checkUpdates(true);}
