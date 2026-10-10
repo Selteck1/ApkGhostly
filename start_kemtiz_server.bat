@@ -46,6 +46,12 @@ echo.
 echo [3/3] Kemtiz API is starting on port 8000.
 echo Leave this window open while you use the messenger.
 echo Local health check: http://127.0.0.1:8000/health
+echo.
+echo For phone testing on the SAME Wi-Fi, enter the PC IPv4 address in the app:
+echo   http://YOUR-PC-IP:8000
+echo The PC IPv4 addresses are shown below:
+ipconfig ^| findstr /i "IPv4"
+echo If Windows Firewall asks, allow Python on Private networks.
 echo Database and token key are kept in: %DATA%
 echo.
 "%VENV%\Scripts\python.exe" -m uvicorn server:app --host 0.0.0.0 --port 8000

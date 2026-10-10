@@ -375,7 +375,7 @@ def home():
         "ok": True,
         "app": "Kemtiz API",
         "client": "android-only",
-        "api_version": "0.3.0",
+        "api_version": "0.4.0",
         "auth_methods": ["username_password"],
         "message": "Используй приложение Kemtiz для Android.",
     }
@@ -391,7 +391,7 @@ def health():
     return {
         "ok": True,
         "app": "Kemtiz",
-        "api_version": "0.3.0",
+        "api_version": "0.4.0",
         "password_auth": True,
         "users": users,
         "messages": messages,
@@ -823,6 +823,81 @@ async def delete_message(message_id: int, user=Depends(auth_user)):
     return {"ok":True}
 
 
+
+async def dispatch_call_message(uid: int, data: dict[str, Any]) -> None:
+    """Validate and relay WebRTC signalling messages between two members of a direct chat."""
+    event_type = str(data.get("type") or "")
+    try:
+        chat_id = int(data.get("chat_id"))
+        target_id = int(data.get("target_user_id"))
+    except (TypeError, ValueError):
+        await live.send_user(uid, {"type": "call.error", "message": "Некорректные данные звонка."})
+        return
+    call_id = str(data.get("call_id") or "").strip()
+    if target_id == uid:
+        await live.send_user(uid, {"type": "call.error", "message": "Нельзя позвонить самому себе.", "call_id": call_id})
+        return
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", call_id):
+        await live.send_user(uid, {"type": "call.error", "message": "Некорректный идентификатор звонка.", "call_id": call_id})
+        return
+    try:
+        with db() as c:
+            chat = c.execute("SELECT kind FROM chats WHERE id=?", (chat_id,)).fetchone()
+            if chat is None:
+                raise HTTPException(status_code=404, detail="Чат для звонка не найден.")
+            ensure_member(c, chat_id, uid)
+            ensure_member(c, chat_id, target_id)
+            if chat["kind"] != "direct":
+                raise HTTPException(status_code=403, detail="Пока видеозвонки доступны только в личных чатах.")
+            caller = c.execute("SELECT id,username,display_name FROM users WHERE id=?", (uid,)).fetchone()
+        if event_type == "call.start":
+            if target_id not in live.by_user:
+                raise HTTPException(status_code=409, detail="Собеседник сейчас не в сети Kemtiz.")
+            await live.send_user(target_id, {
+                "type": "call.incoming", "chat_id": chat_id, "call_id": call_id,
+                "from_user_id": uid, "from_username": caller["username"],
+                "from_display_name": caller["display_name"], "mode": "video",
+            })
+            return
+        if event_type in {"call.accept", "call.reject", "call.end"}:
+            response_type = {
+                "call.accept": "call.accepted",
+                "call.reject": "call.rejected",
+                "call.end": "call.ended",
+            }[event_type]
+            await live.send_user(target_id, {
+                "type": response_type, "chat_id": chat_id,
+                "call_id": call_id, "from_user_id": uid,
+            })
+            return
+        signal = data.get("signal")
+        if not isinstance(signal, dict):
+            await live.send_user(uid, {"type": "call.error", "message": "Пустой сигнал WebRTC.", "call_id": call_id})
+            return
+        signal_type = str(signal.get("type") or "")
+        if signal_type not in {"offer", "answer", "ice"}:
+            await live.send_user(uid, {"type": "call.error", "message": "Неизвестный тип сигнала WebRTC.", "call_id": call_id})
+            return
+        if len(json.dumps(signal, separators=(",", ":"))) > 128_000:
+            await live.send_user(uid, {"type": "call.error", "message": "Слишком большой пакет звонка.", "call_id": call_id})
+            return
+        if signal_type in {"offer", "answer"} and not isinstance(signal.get("sdp"), str):
+            await live.send_user(uid, {"type": "call.error", "message": "Некорректное описание WebRTC.", "call_id": call_id})
+            return
+        if signal_type == "ice" and not isinstance(signal.get("candidate"), str):
+            await live.send_user(uid, {"type": "call.error", "message": "Некорректный ICE-кандидат.", "call_id": call_id})
+            return
+        await live.send_user(target_id, {
+            "type": "call.signal", "chat_id": chat_id, "call_id": call_id,
+            "from_user_id": uid, "signal": signal,
+        })
+    except HTTPException as exc:
+        await live.send_user(uid, {
+            "type": "call.error", "message": str(exc.detail),
+            "chat_id": chat_id, "call_id": call_id,
+        })
+
+
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     await ws.accept()
@@ -868,6 +943,8 @@ async def websocket(ws: WebSocket):
                 event = {"type":"typing","chat_id":cid,"user_id":uid}
                 for target in ids:
                     await live.send_user(target,event)
+            elif data.get("type") in {"call.start", "call.accept", "call.reject", "call.end", "call.signal"}:
+                await dispatch_call_message(uid, data)
     except WebSocketDisconnect:
         pass
     except Exception:

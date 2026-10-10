@@ -1,7 +1,9 @@
 package com.kemtiz.app;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -36,6 +38,7 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 public class KemtizActivity extends Activity {
@@ -222,16 +225,16 @@ public class KemtizActivity extends Activity {
             else loginWithPassword();
         });
 
-        TextView footer = text("Данные передаются по защищённому соединению.", 11, MUTED, Gravity.CENTER);
+        TextView footer = text("В домашней Wi-Fi-сети можно подключаться напрямую к ПК.", 11, MUTED, Gravity.CENTER);
         content.addView(footer, topMargin(match(), 17));
 
         TextView serverHeading = text("СВОЙ СЕРВЕР", 10, ACCENT, Gravity.START);
         serverHeading.setTypeface(Typeface.DEFAULT_BOLD);
         content.addView(serverHeading, topMargin(match(), 22));
         content.addView(text(
-            "Для сервера на ПК вставь сюда HTTPS-ссылку из окна Cloudflare Tunnel.",
+            "Для телефона в той же Wi-Fi-сети введи http://IP-адрес-ПК:8000. Для других сетей нужен публичный HTTPS-адрес.",
             11, MUTED, Gravity.START), topMargin(match(), 5));
-        serverUrlField = field("https://твой-сервер.trycloudflare.com");
+        serverUrlField = field("http://192.168.1.100:8000");
         serverUrlField.setSingleLine(true);
         serverUrlField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         serverUrlField.setText(serverBase);
@@ -587,12 +590,18 @@ public class KemtizActivity extends Activity {
     private void chat(){
         Button back=button("‹   Назад к чатам",false);page.addView(back);back.setOnClickListener(v->navigate("chats"));
         heading(currentChat==null?"Чат":currentChat.optString("title","Чат"),"Переписка синхронизируется с сервером.");
+        Button callButton = button("📹  Видеозвонок", false);
+        page.addView(callButton, topMargin(match(), 8));
+        callButton.setOnClickListener(v -> startVideoCall());
         long id=chatId;
         api("GET","/api/chats/"+id+"/messages?limit=100",null,(data,error)->{
             if(!"chat".equals(screen)||id!=chatId)return;
             page.removeAllViews();
             Button b=button("‹   Назад к чатам",false);page.addView(b);b.setOnClickListener(v->navigate("chats"));
             heading(currentChat==null?"Чат":currentChat.optString("title","Чат"),"Сообщения Kemtiz");
+            Button callButton = button("📹  Видеозвонок", false);
+            page.addView(callButton, topMargin(match(), 8));
+            callButton.setOnClickListener(v -> startVideoCall());
             if(error!=null)page.addView(text(error,13,Color.rgb(255,130,157),Gravity.START));
             JSONArray msgs=data instanceof JSONArray?(JSONArray)data:new JSONArray();
             if(msgs.length()==0)page.addView(text("Напиши первое сообщение 👋",13,MUTED,Gravity.CENTER),topMargin(match(),12));
@@ -696,7 +705,11 @@ public class KemtizActivity extends Activity {
                             if("chat".equals(screen)&&m!=null&&m.optLong("chat_id",-1)==chatId)chat();
                             else if("chats".equals(screen))chats();
                         }else if("chat_list_changed".equals(type)&&"chats".equals(screen))chats();
-                        else if("friend_request".equals(type)&&"requests".equals(screen))requests();
+                        else if("call.incoming".equals(type)){
+                            showIncomingCall(event);
+                        }else if("call.error".equals(type)){
+                            toast(event.optString("message","Не удалось начать звонок."));
+                        }else if("friend_request".equals(type)&&"requests".equals(screen))requests();
                         else if("friend_list_changed".equals(type)){if("friends".equals(screen))friends();if("requests".equals(screen))requests();}
                     });
                 }catch(JSONException ignored){}
@@ -705,6 +718,71 @@ public class KemtizActivity extends Activity {
                 if(!isFinishing()&&!token.isEmpty())main.postDelayed(()->{if(!isFinishing()&&!token.isEmpty())socket();},4000);
             }
         });
+    }
+
+
+    private void startVideoCall() {
+        if (currentChat == null || chatId <= 0) {
+            toast("Сначала открой личный чат.");
+            return;
+        }
+        if (!"direct".equals(currentChat.optString("kind", "direct"))) {
+            toast("Пока видеозвонки доступны в личных чатах.");
+            return;
+        }
+        long otherId = currentChat.optLong("other_user_id", -1);
+        if (otherId <= 0) {
+            toast("Не удалось определить собеседника.");
+            return;
+        }
+        Intent intent = new Intent(this, CallActivity.class);
+        intent.putExtra("server_base", serverBase);
+        intent.putExtra("token", token);
+        intent.putExtra("chat_id", chatId);
+        intent.putExtra("target_id", otherId);
+        intent.putExtra("target_name", currentChat.optString("title", "Собеседник"));
+        intent.putExtra("call_id", UUID.randomUUID().toString().replace("-", ""));
+        intent.putExtra("mode", "offer");
+        intent.putExtra("video", true);
+        startActivity(intent);
+    }
+
+    private void showIncomingCall(JSONObject event) {
+        if (isFinishing() || token.isEmpty()) return;
+        final long incomingChatId = event.optLong("chat_id", -1);
+        final long callerId = event.optLong("from_user_id", -1);
+        final String incomingCallId = event.optString("call_id", "");
+        final String callerName = event.optString("from_display_name",
+                event.optString("from_username", "Пользователь"));
+        if (incomingChatId <= 0 || callerId <= 0 || incomingCallId.isEmpty()) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Входящий видеозвонок")
+                .setMessage(callerName + " звонит тебе по видеосвязи.")
+                .setPositiveButton("Принять", (dialog, which) -> {
+                    Intent intent = new Intent(this, CallActivity.class);
+                    intent.putExtra("server_base", serverBase);
+                    intent.putExtra("token", token);
+                    intent.putExtra("chat_id", incomingChatId);
+                    intent.putExtra("target_id", callerId);
+                    intent.putExtra("target_name", callerName);
+                    intent.putExtra("call_id", incomingCallId);
+                    intent.putExtra("mode", "answer");
+                    intent.putExtra("video", true);
+                    startActivity(intent);
+                })
+                .setNegativeButton("Отклонить", (dialog, which) -> {
+                    if (socket != null) {
+                        socket.send(obj("type", "call.reject", "chat_id", incomingChatId,
+                                "target_user_id", callerId, "call_id", incomingCallId).toString());
+                    }
+                })
+                .setOnCancelListener(dialog -> {
+                    if (socket != null) {
+                        socket.send(obj("type", "call.reject", "chat_id", incomingChatId,
+                                "target_user_id", callerId, "call_id", incomingCallId).toString());
+                    }
+                })
+                .show();
     }
 
     private void closeSocket(){if(socket!=null){socket.close(1000,"close");socket=null;}}
@@ -746,8 +824,8 @@ public class KemtizActivity extends Activity {
         http.newCall(b.build()).enqueue(new Callback(){
             @Override public void onFailure(Call call,IOException e){
                 String message = e instanceof java.net.SocketTimeoutException
-                    ? "Сервер долго отвечает. Проверь, что сервер запущен на ПК и окно туннеля открыто."
-                    : "Нет соединения. Проверь интернет, адрес сервера и запущен ли туннель.";
+                    ? "Сервер долго отвечает. Проверь, что сервер запущен на ПК и телефон подключён к той же Wi-Fi-сети."
+                    : "Нет соединения. Проверь адрес сервера, Wi-Fi и разрешение Windows Firewall.";
                 main.post(()->callback.done(null,message));
             }
             @Override public void onResponse(Call call,Response response)throws IOException{
