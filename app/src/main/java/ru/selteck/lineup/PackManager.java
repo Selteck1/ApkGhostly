@@ -28,10 +28,15 @@ public final class PackManager {
     private PackManager() {}
 
     public static void exportToUri(Context context, AppDb db, Uri destination) throws Exception {
+        exportToUri(context, db, destination, "https://t.me/");
+    }
+
+    public static void exportToUri(Context context, AppDb db, Uri destination, String telegramUrl) throws Exception {
         OutputStream raw = context.getContentResolver().openOutputStream(destination);
         if (raw == null) throw new IllegalStateException("Не удалось открыть файл для записи");
         JSONObject manifest = new JSONObject(); manifest.put("format", "lineup"); manifest.put("schemaVersion", 1);
         manifest.put("packId", "community"); manifest.put("version", System.currentTimeMillis()/1000L); manifest.put("title", "Lineup — база раскидок");
+        manifest.put("telegramUrl", telegramUrl == null ? "https://t.me/" : telegramUrl);
         JSONArray list = new JSONArray(); Map<String, File> files = new HashMap<>(); int n=0;
         for (Block b : db.list("")) {
             JSONObject item = new JSONObject(); item.put("id",b.contentId); item.put("title",b.title); item.put("map",b.map);
