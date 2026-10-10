@@ -317,8 +317,15 @@ public class MainActivity extends Activity {
     }
 
     private void openBuildPage(){
-        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/Selteck1/ApkGhostly/actions/workflows/client-release.yml")));}
-        catch(Exception e){Toast.makeText(this,"Открой Actions в репозитории GitHub",Toast.LENGTH_SHORT).show();}
+        new AlertDialog.Builder(this).setTitle("Скачать приложение для игроков")
+            .setMessage("Когда ключ подписи настроен, готовый APK появится в Releases. До этого тестовую сборку можно скачать как artifact из GitHub Actions.")
+            .setPositiveButton("Последний APK",(d,w)->openUrl("https://github.com/Selteck1/ApkGhostly/releases/latest/download/Lineup-Client.apk"))
+            .setNeutralButton("Тестовая сборка",(d,w)->openUrl("https://github.com/Selteck1/ApkGhostly/actions/workflows/client-release.yml"))
+            .setNegativeButton("Отмена",null).show();
+    }
+    private void openUrl(String value){
+        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(value)));}
+        catch(Exception e){Toast.makeText(this,"Не удалось открыть ссылку",Toast.LENGTH_SHORT).show();}
     }
 
     private void checkUpdates(){checkUpdates(true);}
