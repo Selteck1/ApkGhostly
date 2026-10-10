@@ -1,4 +1,4 @@
-# Kemtiz Messenger 2.7.0
+# Kemtiz Messenger 2.8.0
 
 Kemtiz — Android-мессенджер с регистрацией по логину и паролю.
 
@@ -9,6 +9,7 @@ Kemtiz — Android-мессенджер с регистрацией по лог�
 - история сообщений и WebSocket-события;
 - видеозвонки один-на-один через WebRTC (тестовая реализация);
 - Android system notifications for messages/calls while app process and WebSocket connection are alive;
+- a chat screen with a fixed composer and an independently scrollable message history;
 - local network test via PC IPv4 address and public HTTPS exposure via Tailscale Funnel.
 
 ## Ограничения

@@ -79,6 +79,8 @@ public class KemtizActivity extends Activity {
     private ScrollView scroll;
     private WebSocket socket;
     private boolean activityVisible = false;
+    private EditText chatMessageInput;
+    private Button chatMessageSend;
 
     private interface Result { void done(Object data, String error); }
 
@@ -343,6 +345,10 @@ public class KemtizActivity extends Activity {
 
     // Native navigation shell and screens
     private void shell() {
+        if ("chat".equals(screen)) {
+            chatShell();
+            return;
+        }
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(bg(BG, 0));
@@ -410,6 +416,69 @@ public class KemtizActivity extends Activity {
         setContentView(root);
         requestNotificationPermission();
         render();
+    }
+
+    private void chatShell() {
+        root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(bg(BG, 0));
+        root.addView(buildChatHeader(), match());
+
+        scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setClipToPadding(false);
+        page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(13), dp(13), dp(13), dp(18));
+        scroll.addView(page, new ScrollView.LayoutParams(-1, -2));
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        LinearLayout composerShell = new LinearLayout(this);
+        composerShell.setOrientation(LinearLayout.HORIZONTAL);
+        composerShell.setGravity(Gravity.CENTER_VERTICAL);
+        composerShell.setPadding(dp(10), dp(8), dp(10), dp(10));
+        composerShell.setBackground(bg(SURFACE, 19));
+
+        chatMessageInput = field("Сообщение…");
+        chatMessageInput.setSingleLine(false);
+        chatMessageInput.setMinHeight(dp(48));
+        chatMessageInput.setMaxLines(4);
+        chatMessageInput.setPadding(dp(15), dp(10), dp(15), dp(10));
+        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        inputLp.rightMargin = dp(8);
+        composerShell.addView(chatMessageInput, inputLp);
+
+        chatMessageSend = button("➤", true);
+        chatMessageSend.setTextSize(18);
+        composerShell.addView(chatMessageSend, new LinearLayout.LayoutParams(dp(52), dp(49)));
+        chatMessageSend.setOnClickListener(v -> sendChatMessage());
+
+        LinearLayout.LayoutParams composerLp = match();
+        composerLp.leftMargin = dp(10);
+        composerLp.rightMargin = dp(10);
+        composerLp.topMargin = dp(5);
+        composerLp.bottomMargin = dp(7);
+        root.addView(composerShell, composerLp);
+        setContentView(root);
+        requestNotificationPermission();
+        chat();
+    }
+
+    private void sendChatMessage() {
+        if (chatMessageInput == null || chatMessageSend == null) return;
+        String body = chatMessageInput.getText().toString().trim();
+        if (body.isEmpty()) return;
+        long id = chatId;
+        chatMessageSend.setEnabled(false);
+        api("POST", "/api/chats/" + id + "/messages", obj("body", body), (sent, error) -> {
+            if (chatMessageSend != null) chatMessageSend.setEnabled(true);
+            if (error != null) {
+                toast(error);
+            } else {
+                if (chatMessageInput != null) chatMessageInput.setText("");
+                chat();
+            }
+        });
     }
 
     private void navigate(String where) {
@@ -600,7 +669,7 @@ public class KemtizActivity extends Activity {
     }
 
 
-    private void addChatHeader() {
+    private LinearLayout buildChatHeader() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
@@ -643,38 +712,85 @@ public class KemtizActivity extends Activity {
         video.setTextSize(17);
         bar.addView(video, new LinearLayout.LayoutParams(dp(52), dp(46)));
         video.setOnClickListener(v -> startVideoCall());
-        page.addView(bar);
+        return bar;
     }
 
-    private void chat(){
-        addChatHeader();
-        long id=chatId;
-        api("GET","/api/chats/"+id+"/messages?limit=100",null,(data,error)->{
-            if(!"chat".equals(screen)||id!=chatId)return;
+    private void chat() {
+        long id = chatId;
+        if (page != null) {
             page.removeAllViews();
-            addChatHeader();
-            if(error!=null)page.addView(text(error,13,Color.rgb(255,130,157),Gravity.START));
-            JSONArray msgs=data instanceof JSONArray?(JSONArray)data:new JSONArray();
-            if(msgs.length()==0)page.addView(text("Напиши первое сообщение 👋",13,MUTED,Gravity.CENTER),topMargin(match(),12));
-            for(int i=0;i<msgs.length();i++){
-                JSONObject m=msgs.optJSONObject(i);if(m==null)continue;
-                boolean own=me!=null&&m.optLong("sender_id",-2)==me.optLong("id",-1);
-                LinearLayout bubble=card();bubble.setBackground(bg(own?Color.rgb(53,41,83):PANEL,15));
-                bubble.addView(text(own?"Ты":m.optString("sender_display_name",m.optString("sender_username","Пользователь")),11,own?ACCENT:GREEN,Gravity.START));
-                bubble.addView(text(m.optString("body",""),14,WHITE,Gravity.START),topMargin(match(),4));
-                LinearLayout.LayoutParams bp=match();bp.topMargin=dp(4);bp.leftMargin=own?dp(25):0;bp.rightMargin=own?0:dp(25);page.addView(bubble,bp);
+            page.addView(text("Загружаем сообщения…", 12, MUTED, Gravity.CENTER),
+                    topMargin(match(), 14));
+        }
+        api("GET", "/api/chats/" + id + "/messages?limit=100", null, (data, error) -> {
+            if (!"chat".equals(screen) || id != chatId || page == null) return;
+            page.removeAllViews();
+            if (error != null) {
+                page.addView(text("Не удалось загрузить сообщения", 15, WHITE, Gravity.CENTER),
+                        topMargin(match(), 12));
+                page.addView(text(error, 12, Color.rgb(255,130,157), Gravity.CENTER),
+                        topMargin(match(), 7));
+                Button retry = button("Повторить", false);
+                page.addView(retry, topMargin(match(), 10));
+                retry.setOnClickListener(v -> chat());
+                return;
             }
-            LinearLayout composer=new LinearLayout(this);composer.setOrientation(LinearLayout.HORIZONTAL);composer.setGravity(Gravity.CENTER_VERTICAL);
-            page.addView(composer,topMargin(match(),12));
-            EditText message=field("Написать сообщение…");message.setMinHeight(dp(50));message.setMaxLines(4);
-            composer.addView(message,new LinearLayout.LayoutParams(0,-2,1));
-            Button send=button("➤",true);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(53),dp(50));sp.leftMargin=dp(7);composer.addView(send,sp);
-            send.setOnClickListener(v->{
-                String text=message.getText().toString().trim();if(text.isEmpty())return;
-                send.setEnabled(false);api("POST","/api/chats/"+id+"/messages",obj("body",text),(sent,sendError)->{
-                    if(sendError!=null){toast(sendError);send.setEnabled(true);}else chat();
-                });
-            });
+            JSONArray msgs = data instanceof JSONArray ? (JSONArray) data : new JSONArray();
+            if (msgs.length() == 0) {
+                LinearLayout empty = card();
+                empty.setGravity(Gravity.CENTER);
+                TextView icon = text("✦", 27, ACCENT, Gravity.CENTER);
+                icon.setBackground(bg(PANEL, 28));
+                empty.addView(icon, new LinearLayout.LayoutParams(dp(56), dp(56)));
+                TextView h = text("Начни разговор", 16, WHITE, Gravity.CENTER);
+                h.setTypeface(Typeface.DEFAULT_BOLD);
+                empty.addView(h, topMargin(match(), 10));
+                empty.addView(text("Напиши первое сообщение — оно появится здесь.", 12, MUTED, Gravity.CENTER),
+                        topMargin(match(), 4));
+                page.addView(empty, topMargin(match(), 12));
+            }
+            boolean groupChat = currentChat != null && "group".equals(currentChat.optString("kind", ""));
+            for (int i = 0; i < msgs.length(); i++) {
+                JSONObject message = msgs.optJSONObject(i);
+                if (message == null) continue;
+                boolean own = me != null && message.optLong("sender_id", -2) == me.optLong("id", -1);
+                LinearLayout line = new LinearLayout(this);
+                line.setOrientation(LinearLayout.HORIZONTAL);
+                line.setGravity(own ? Gravity.END : Gravity.START);
+                LinearLayout.LayoutParams lineLp = match();
+                lineLp.topMargin = dp(5);
+                page.addView(line, lineLp);
+
+                LinearLayout bubble = new LinearLayout(this);
+                bubble.setOrientation(LinearLayout.VERTICAL);
+                bubble.setPadding(dp(13), dp(9), dp(13), dp(8));
+                bubble.setBackground(bg(own ? Color.rgb(65, 48, 103) : PANEL, 16));
+                LinearLayout.LayoutParams bubbleLp = new LinearLayout.LayoutParams(-2, -2);
+                bubbleLp.leftMargin = dp(own ? 42 : 0);
+                bubbleLp.rightMargin = dp(own ? 0 : 42);
+                line.addView(bubble, bubbleLp);
+
+                if (groupChat) {
+                    String sender = own ? "Ты" : message.optString("sender_display_name",
+                            message.optString("sender_username", "Пользователь"));
+                    TextView senderView = text(sender, 11, own ? ACCENT : GREEN, Gravity.START);
+                    senderView.setTypeface(Typeface.DEFAULT_BOLD);
+                    bubble.addView(senderView, match());
+                }
+                TextView body = text(message.optString("body", ""), 14, WHITE, Gravity.START);
+                body.setMaxWidth(dp(270));
+                bubble.addView(body, match());
+
+                String created = message.optString("created_at", "");
+                String time = created.length() >= 16 ? created.substring(11, 16) : "";
+                if (!time.isEmpty()) {
+                    TextView timeView = text(time, 10, MUTED, Gravity.END);
+                    LinearLayout.LayoutParams timeLp = match();
+                    timeLp.topMargin = dp(4);
+                    bubble.addView(timeView, timeLp);
+                }
+            }
+            if (scroll != null) scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
         });
     }
 
