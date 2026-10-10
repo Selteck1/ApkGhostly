@@ -44,7 +44,6 @@ import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 import org.webrtc.RendererCommon;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -220,7 +219,7 @@ public class CallActivity extends Activity {
                     main.post(() -> handleSocketEvent(event));
                 } catch (JSONException ignored) { }
             }
-            @Override public void onFailure(WebSocket ws, IOException error, Response response) {
+            @Override public void onFailure(WebSocket ws, Throwable error, Response response) {
                 status("Нет связи с сервером Kemtiz.");
                 if (outgoing && !callAccepted) main.postDelayed(() -> {
                     if (!isFinishing() && !callAccepted) finishWithMessage("Не удалось подключиться к серверу.");

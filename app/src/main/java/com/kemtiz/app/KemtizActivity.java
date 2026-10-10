@@ -599,9 +599,9 @@ public class KemtizActivity extends Activity {
             page.removeAllViews();
             Button b=button("‹   Назад к чатам",false);page.addView(b);b.setOnClickListener(v->navigate("chats"));
             heading(currentChat==null?"Чат":currentChat.optString("title","Чат"),"Сообщения Kemtiz");
-            Button callButton = button("📹  Видеозвонок", false);
-            page.addView(callButton, topMargin(match(), 8));
-            callButton.setOnClickListener(v -> startVideoCall());
+            Button callButtonInner = button("📹  Видеозвонок", false);
+            page.addView(callButtonInner, topMargin(match(), 8));
+            callButtonInner.setOnClickListener(v -> startVideoCall());
             if(error!=null)page.addView(text(error,13,Color.rgb(255,130,157),Gravity.START));
             JSONArray msgs=data instanceof JSONArray?(JSONArray)data:new JSONArray();
             if(msgs.length()==0)page.addView(text("Напиши первое сообщение 👋",13,MUTED,Gravity.CENTER),topMargin(match(),12));
