@@ -41,3 +41,8 @@ After deployment, open `/health`. The updated server reports `api_version: "0.3.
 ```sh
 python -m unittest -v test_server
 ```
+
+
+## Windows PC server
+
+For self-hosting without Render, see the repository file `README_PC_SERVER_RU.md` and run `start_kemtiz_server.bat` from Windows. The Android client lets the user enter a server URL on the sign-in screen, then uses it for REST and WebSocket traffic.
