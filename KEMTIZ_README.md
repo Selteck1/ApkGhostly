@@ -1,4 +1,4 @@
-# Kemtiz Messenger 3.0.0
+# Kemtiz Messenger 3.1.0
 
 Kemtiz — Android-мессенджер с регистрацией по логину и паролю.
 
@@ -13,8 +13,8 @@ Kemtiz — Android-мессенджер с регистрацией по лог�
 - a portrait full-screen video-call UI with floating self-preview and custom circular controls;
 - explicit WebRTC audio routing, echo/noise suppression and capped call volume;
 - Firebase Cloud Messaging integration for background message and incoming-call pushes (one-time server setup required);
-- vibration, badge-enabled notification channels and push deep links into chats;
-- persistent Tailscale URL by default and a collapsed advanced server panel;
+- vibration, badge-enabled notification channels, friend-request push alerts and push deep links into chats;
+- fixed Tailscale URL selected by default, preserved session and one-tap reconnect after server downtime;
 - local network test via PC IPv4 address and public HTTPS exposure via Tailscale Funnel.
 
 ## Ограничения

@@ -126,6 +126,7 @@ public class KemtizPushService extends FirebaseMessagingService {
         String type = data.get("type");
         if ("message".equals(type)) showMessage(data);
         else if ("call.incoming".equals(type)) showIncomingCall(data);
+        else if ("friend_request".equals(type)) showFriendRequest(data);
     }
 
     private void showMessage(Map<String, String> data) {
@@ -149,9 +150,36 @@ public class KemtizPushService extends FirebaseMessagingService {
                 .setStyle(new Notification.BigTextStyle().bigText(body))
                 .setContentIntent(pending).setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_MESSAGE).setShowWhen(true).setNumber(badge)
+                .setBadgeIconType(Notification.BADGE_ICON_SMALL)
                 .setVibrate(new long[]{0, 220, 120, 220}).build();
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(10000 + (int)(chatId % 90000), notification);
+    }
+
+    private void showFriendRequest(Map<String, String> data) {
+        if (!notificationsAllowed()) return;
+        String title = data.getOrDefault("title", "Новая заявка в друзья");
+        String body = data.getOrDefault("body", "Кто-то хочет добавить тебя в друзья");
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        int badge = prefs.getInt("notification_badge_count", 0) + 1;
+        prefs.edit().putInt("notification_badge_count", badge).apply();
+
+        Intent open = new Intent(this, KemtizActivity.class);
+        open.putExtra("open_screen", "requests");
+        open.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pending = PendingIntent.getActivity(this, 42001, open,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification = new Notification.Builder(this, MESSAGE_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(Color.rgb(229, 48, 67))
+                .setContentTitle(title).setContentText(body)
+                .setStyle(new Notification.BigTextStyle().bigText(body))
+                .setContentIntent(pending).setAutoCancel(true)
+                .setCategory(Notification.CATEGORY_SOCIAL).setShowWhen(true)
+                .setNumber(badge).setBadgeIconType(Notification.BADGE_ICON_SMALL)
+                .setVibrate(new long[]{0, 220, 120, 220}).build();
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(92001, notification);
     }
 
     private void showIncomingCall(Map<String, String> data) {
@@ -180,7 +208,8 @@ public class KemtizPushService extends FirebaseMessagingService {
                 .setContentIntent(acceptPending)
                 .addAction(android.R.drawable.ic_menu_call, "Принять", acceptPending)
                 .setAutoCancel(true).setCategory(Notification.CATEGORY_CALL).setShowWhen(true)
-                .setNumber(1).setVibrate(new long[]{0, 450, 180, 450, 180, 450}).build();
+                .setNumber(1).setBadgeIconType(Notification.BADGE_ICON_SMALL)
+                .setVibrate(new long[]{0, 450, 180, 450, 180, 450}).build();
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(CALL_NOTIFICATION_ID, notification);
     }

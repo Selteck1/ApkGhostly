@@ -26,6 +26,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.text.InputType;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -81,6 +82,7 @@ public class KemtizActivity extends Activity {
     private ScrollView scroll;
     private WebSocket socket;
     private boolean activityVisible = false;
+    private boolean sessionRestorePending = false;
     private EditText chatMessageInput;
     private Button chatMessageSend;
 
@@ -104,10 +106,16 @@ public class KemtizActivity extends Activity {
         token = prefs.getString("token", "");
         if (token.isEmpty()) { login(""); return; }
         api("GET", "/api/me", null, (data, error) -> {
-            if (error != null || !(data instanceof JSONObject)) {
+            if (error != null) {
+                // A server restart is not an authentication failure: keep the token and saved URL.
+                sessionRestorePending = !token.isEmpty();
+                login("Сервер временно недоступен. Адрес и сессия сохранены. " +
+                        "Когда сервер запустится, нажми «Повторить подключение».");
+            } else if (!(data instanceof JSONObject)) {
                 clearSession();
-                login(error == null ? "" : error);
+                login("Сервер вернул некорректные данные. Проверь адрес подключения.");
             } else {
+                sessionRestorePending = false;
                 me = (JSONObject) data;
                 shell();
                 socket();
@@ -147,10 +155,12 @@ public class KemtizActivity extends Activity {
         content.setPadding(dp(23), dp(24), dp(23), dp(25));
         authScroll.addView(content, new ScrollView.LayoutParams(-1, -2));
 
-        TextView logo = text("K", 30, WHITE, Gravity.CENTER);
-        logo.setTypeface(Typeface.DEFAULT_BOLD);
-        logo.setBackground(bg(PURPLE, 22));
-        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(66), dp(66));
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.ic_kemtiz_foreground);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        logo.setPadding(dp(8), dp(8), dp(8), dp(8));
+        logo.setBackground(bg(Color.rgb(24, 18, 42), 22));
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(72), dp(72));
         logoLp.gravity = Gravity.CENTER_HORIZONTAL;
         content.addView(logo, logoLp);
 
@@ -169,10 +179,31 @@ public class KemtizActivity extends Activity {
         tagLp.topMargin = dp(5);
         content.addView(tagline, tagLp);
 
+        LinearLayout welcome = new LinearLayout(this);
+        welcome.setOrientation(LinearLayout.VERTICAL);
+        welcome.setPadding(dp(17), dp(17), dp(17), dp(17));
+        GradientDrawable welcomeBackground = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(48, 32, 79), Color.rgb(23, 20, 39)});
+        welcomeBackground.setCornerRadius(dp(22));
+        welcomeBackground.setStroke(dp(1), Color.rgb(78, 62, 117));
+        welcome.setBackground(welcomeBackground);
+        LinearLayout.LayoutParams welcomeLp = match();
+        welcomeLp.topMargin = dp(20);
+        content.addView(welcome, welcomeLp);
+        TextView welcomeEyebrow = text("KEMTIZ  /  ТВОЁ ПРОСТРАНСТВО", 9, ACCENT, Gravity.START);
+        welcomeEyebrow.setTypeface(Typeface.DEFAULT_BOLD);
+        welcome.addView(welcomeEyebrow);
+        TextView welcomeTitle = text("Ближе к своим.", 21, WHITE, Gravity.START);
+        welcomeTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        welcome.addView(welcomeTitle, topMargin(match(), 6));
+        welcome.addView(text("Переписка, друзья и видеозвонки — в одном спокойном месте.",
+                12, Color.rgb(205, 198, 223), Gravity.START), topMargin(match(), 5));
+
         TextView heading = text(register ? "Создай свой аккаунт" : "С возвращением", 25, WHITE, Gravity.START);
         heading.setTypeface(Typeface.DEFAULT_BOLD);
         LinearLayout.LayoutParams headingLp = match();
-        headingLp.topMargin = dp(27);
+        headingLp.topMargin = dp(23);
         content.addView(heading, headingLp);
         TextView description = text(
             register ? "Зарегистрируйся и начни общаться." : "Войди, чтобы продолжить общение.",
@@ -249,6 +280,12 @@ public class KemtizActivity extends Activity {
             else loginWithPassword();
         });
 
+        if (sessionRestorePending && !register) {
+            Button retrySession = button("Повторить подключение", false);
+            form.addView(retrySession, topMargin(match(), 8));
+            retrySession.setOnClickListener(v -> restoreSavedSession(retrySession));
+        }
+
         TextView footer = text("Адрес сервера сохраняется на устройстве. Войди, чтобы продолжить.", 11, MUTED, Gravity.CENTER);
         content.addView(footer, topMargin(match(), 17));
 
@@ -291,7 +328,49 @@ public class KemtizActivity extends Activity {
         applySystemBarInsets(root);
     }
 
+    private boolean commitServerUrlField() {
+        if (serverUrlField == null) return true;
+        String entered = serverUrlField.getText().toString().trim();
+        if (entered.isEmpty()) return true;
+        String candidate = normalizeServerBase(entered);
+        if (candidate.isEmpty()) {
+            serverUrlField.setError("Введи полный адрес HTTPS-сервера");
+            return false;
+        }
+        serverBase = candidate;
+        prefs.edit().putString(SERVER_PREF, serverBase).apply();
+        return true;
+    }
+
+    private void restoreSavedSession(Button button) {
+        if (button != null) {
+            button.setEnabled(false);
+            button.setText("Подключаемся…");
+        }
+        api("GET", "/api/me", null, (data, error) -> {
+            if (button != null) {
+                button.setEnabled(true);
+                button.setText("Повторить подключение");
+            }
+            if (error != null || !(data instanceof JSONObject)) {
+                if (authError != null) {
+                    authError.setText(error == null ? "Не удалось восстановить сессию." : error);
+                    authError.setVisibility(View.VISIBLE);
+                }
+                return;
+            }
+            sessionRestorePending = false;
+            me = (JSONObject) data;
+            screen = "chats";
+            shell();
+            socket();
+            configurePush();
+            handlePushIntent(getIntent());
+        });
+    }
+
     private void loginWithPassword() {
+        if (!commitServerUrlField()) return;
         String username = authUsername.getText().toString().trim().replace("@", "").toLowerCase(Locale.ROOT);
         String password = authPassword.getText().toString();
         if (!username.matches("[a-z0-9][a-z0-9_]{2,23}")) {
@@ -318,6 +397,7 @@ public class KemtizActivity extends Activity {
     }
 
     private void registerWithPassword() {
+        if (!commitServerUrlField()) return;
         String username = authUsername.getText().toString().trim().replace("@", "").toLowerCase(Locale.ROOT);
         String password = authPassword.getText().toString();
         String confirm = authConfirm == null ? "" : authConfirm.getText().toString();
@@ -359,6 +439,7 @@ public class KemtizActivity extends Activity {
     private void accept(JSONObject result) {
         token = result.optString("token", "");
         me = result.optJSONObject("user");
+        sessionRestorePending = false;
         if (token.isEmpty() || me == null) {
             clearSession(); login("Сервер не вернул данные аккаунта."); return;
         }
@@ -371,6 +452,7 @@ public class KemtizActivity extends Activity {
 
     private void clearSession() {
         KemtizPushService.unregisterCurrentToken(this);
+        sessionRestorePending = false;
         token = "";
         me = null;
         prefs.edit().remove("token").apply();
@@ -391,10 +473,12 @@ public class KemtizActivity extends Activity {
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(17), dp(13), dp(17), dp(13));
-        TextView logo = text("K", 19, WHITE, Gravity.CENTER);
-        logo.setTypeface(Typeface.DEFAULT_BOLD);
-        logo.setBackground(bg(PURPLE, 14));
-        header.addView(logo, new LinearLayout.LayoutParams(dp(43), dp(43)));
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.ic_kemtiz_foreground);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        logo.setPadding(dp(4), dp(4), dp(4), dp(4));
+        logo.setBackground(bg(Color.rgb(25, 19, 43), 15));
+        header.addView(logo, new LinearLayout.LayoutParams(dp(45), dp(45)));
         LinearLayout brand = new LinearLayout(this);
         brand.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams brandLp = new LinearLayout.LayoutParams(0, -2, 1);
@@ -403,7 +487,7 @@ public class KemtizActivity extends Activity {
         TextView name = text("KEMTIZ", 17, WHITE, Gravity.START);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         brand.addView(name);
-        brand.addView(text("ТВОЙ КРУГ. ТВОИ РАЗГОВОРЫ.", 9, MUTED, Gravity.START));
+        brand.addView(text("ТВОЙ КРУГ  ·  ТВОИ РАЗГОВОРЫ", 9, ACCENT, Gravity.START));
         TextView avatar = text(initial(me == null ? "K" : me.optString("display_name", "K")), 16, WHITE, Gravity.CENTER);
         avatar.setTypeface(Typeface.DEFAULT_BOLD);
         avatar.setBackground(bg(PANEL, 18));
@@ -545,41 +629,111 @@ public class KemtizActivity extends Activity {
     }
 
     private void chats() {
-        heading("Сообщения", "Твои люди и разговоры в одном месте.");
+        page.removeAllViews();
+
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(18), dp(18), dp(18), dp(17));
+        GradientDrawable heroBackground = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(49, 32, 81), Color.rgb(22, 19, 38)});
+        heroBackground.setCornerRadius(dp(24));
+        heroBackground.setStroke(dp(1), Color.rgb(73, 58, 111));
+        hero.setBackground(heroBackground);
+        page.addView(hero, match());
+
+        TextView eyebrow = text("ЛИЧНЫЕ РАЗГОВОРЫ  ·  KEMTIZ", 9, ACCENT, Gravity.START);
+        eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
+        hero.addView(eyebrow);
+        TextView heroTitle = text("Рядом со своими.", 24, WHITE, Gravity.START);
+        heroTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        hero.addView(heroTitle, topMargin(match(), 7));
+        hero.addView(text("Твои чаты, друзья и видеозвонки — здесь.",
+                12, Color.rgb(209, 202, 227), Gravity.START), topMargin(match(), 4));
+
+        LinearLayout quickActions = new LinearLayout(this);
+        quickActions.setOrientation(LinearLayout.HORIZONTAL);
+        quickActions.setGravity(Gravity.CENTER_VERTICAL);
+        hero.addView(quickActions, topMargin(match(), 15));
+        Button findPeople = button("Найти людей", true);
+        Button friendsButton = button("Друзья", false);
+        quickActions.addView(findPeople, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        LinearLayout.LayoutParams friendsLp = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        friendsLp.leftMargin = dp(8);
+        quickActions.addView(friendsButton, friendsLp);
+        findPeople.setOnClickListener(v -> navigate("search"));
+        friendsButton.setOnClickListener(v -> navigate("friends"));
+
+        TextView sectionTitle = text("НЕДАВНИЕ ДИАЛОГИ", 10, ACCENT, Gravity.START);
+        sectionTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        page.addView(sectionTitle, topMargin(match(), 20));
+        LinearLayout chatList = new LinearLayout(this);
+        chatList.setOrientation(LinearLayout.VERTICAL);
+        page.addView(chatList, topMargin(match(), 10));
+
         api("GET", "/api/chats", null, (data, error) -> {
-            if (!"chats".equals(screen)) return;
-            page.removeAllViews(); heading("Сообщения", "Твои люди и разговоры в одном месте.");
-            if (error != null) { empty("Не удалось загрузить чаты", error, "Повторить", this::chats); return; }
-            JSONArray list = data instanceof JSONArray ? (JSONArray)data : new JSONArray();
-            if (list.length() == 0) { empty("Здесь пока тихо", "Добавь друзей, чтобы начать переписку.", "Найти людей", () -> navigate("search")); return; }
-            for (int i=0; i<list.length(); i++) {
+            if (!"chats".equals(screen) || page == null) return;
+            chatList.removeAllViews();
+            if (error != null) {
+                emptyIn(chatList, "Не удалось загрузить чаты", error, "Повторить", this::chats);
+                return;
+            }
+            JSONArray list = data instanceof JSONArray ? (JSONArray) data : new JSONArray();
+            if (list.length() == 0) {
+                emptyIn(chatList, "Пока тихо", "Найди людей и начни первый разговор.", "Найти людей", () -> navigate("search"));
+                return;
+            }
+            for (int i = 0; i < list.length(); i++) {
                 JSONObject chat = list.optJSONObject(i);
-                if (chat != null) chatRow(chat);
+                if (chat != null) chatRow(chat, chatList);
             }
         });
     }
 
-    private void chatRow(JSONObject chat) {
+    private void chatRow(JSONObject chat, LinearLayout parent) {
         LinearLayout row = card();
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView icon = text(initial(chat.optString("title", "K")), 18, WHITE, Gravity.CENTER);
-        icon.setBackground(bg(PURPLE, 25));
-        row.addView(icon, new LinearLayout.LayoutParams(dp(47), dp(47)));
+        row.setPadding(dp(13), dp(13), dp(13), dp(13));
+
+        TextView avatar = text(initial(chat.optString("title", "K")), 18, WHITE, Gravity.CENTER);
+        avatar.setTypeface(Typeface.DEFAULT_BOLD);
+        avatar.setBackground(bg(PURPLE, 22));
+        row.addView(avatar, new LinearLayout.LayoutParams(dp(49), dp(49)));
+
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0, -2, 1);
-        infoLp.leftMargin = dp(11); row.addView(info, infoLp);
-        info.addView(text(chat.optString("title", "Чат"), 15, WHITE, Gravity.START));
+        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        infoLp.leftMargin = dp(12);
+        row.addView(info, infoLp);
+
+        LinearLayout titleLine = new LinearLayout(this);
+        titleLine.setOrientation(LinearLayout.HORIZONTAL);
+        titleLine.setGravity(Gravity.CENTER_VERTICAL);
+        info.addView(titleLine, match());
+        TextView title = text(chat.optString("title", "Чат"), 15, WHITE, Gravity.START);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setMaxLines(1);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        titleLine.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        String timestamp = chat.optString("last_message_at", "");
+        String time = timestamp.length() >= 16 ? timestamp.substring(11, 16) : "";
+        if (!time.isEmpty()) titleLine.addView(text(time, 10, MUTED, Gravity.END));
+
         String preview = chat.optString("last_message", "");
-        if (preview.isEmpty() || "null".equals(preview)) preview = "Начни разговор";
+        if (preview.isEmpty() || "null".equals(preview)) preview = "Напиши первое сообщение";
         TextView last = text(preview, 12, MUTED, Gravity.START);
-        last.setMaxLines(1); last.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        info.addView(last, topMargin(match(), 4));
+        last.setMaxLines(1);
+        last.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        info.addView(last, topMargin(match(), 5));
+
         row.setOnClickListener(v -> {
-            currentChat = chat; chatId = chat.optLong("id", -1); screen = "chat"; shell();
+            currentChat = chat;
+            chatId = chat.optLong("id", -1);
+            screen = "chat";
+            shell();
         });
-        page.addView(row);
+        parent.addView(row);
     }
 
     private void friends() {
@@ -688,20 +842,134 @@ public class KemtizActivity extends Activity {
         parent.addView(row);
     }
 
-    private void profile(){
-        heading("Твой профиль","Настройки аккаунта Kemtiz.");
-        LinearLayout box=card();box.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView icon=text(initial(me==null?"K":me.optString("display_name","K")),30,WHITE,Gravity.CENTER);icon.setTypeface(Typeface.DEFAULT_BOLD);icon.setBackground(bg(PURPLE,44));
-        box.addView(icon,new LinearLayout.LayoutParams(dp(82),dp(82)));
-        TextView name=text(me==null?"Kemtiz":me.optString("display_name","Kemtiz"),21,WHITE,Gravity.CENTER);name.setTypeface(Typeface.DEFAULT_BOLD);box.addView(name,topMargin(match(),12));
-        box.addView(text(me==null?"":"@"+me.optString("username",""),14,ACCENT,Gravity.CENTER),topMargin(match(),4));
-        if(me!=null&&!me.optString("email","").isEmpty())box.addView(text(me.optString("email",""),12,MUTED,Gravity.CENTER),topMargin(match(),4));
-        page.addView(box);
-        LinearLayout about=card();about.addView(text("О KEMTIZ",11,ACCENT,Gravity.START));
-        about.addView(text(me==null?"Общайся, находи друзей и создавай чаты.":me.optString("about","Общайся, находи друзей и создавай чаты."),14,WHITE,Gravity.START),topMargin(match(),7));
-        page.addView(about,topMargin(match(),8));
-        Button logout=button("Выйти из аккаунта",false);page.addView(logout,topMargin(match(),13));
-        logout.setOnClickListener(v->{clearSession();login("");});
+    private void profile() {
+        heading("Профиль", "Аккаунт, подключение и уведомления.");
+
+        LinearLayout account = card();
+        account.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView avatar = text(initial(me == null ? "K" : me.optString("display_name", "K")), 29, WHITE, Gravity.CENTER);
+        avatar.setTypeface(Typeface.DEFAULT_BOLD);
+        avatar.setBackground(bg(PURPLE, 42));
+        account.addView(avatar, new LinearLayout.LayoutParams(dp(78), dp(78)));
+        TextView displayName = text(me == null ? "Kemtiz" : me.optString("display_name", "Kemtiz"), 21, WHITE, Gravity.CENTER);
+        displayName.setTypeface(Typeface.DEFAULT_BOLD);
+        account.addView(displayName, topMargin(match(), 11));
+        account.addView(text(me == null ? "" : "@" + me.optString("username", ""), 13, ACCENT, Gravity.CENTER),
+                topMargin(match(), 4));
+        page.addView(account);
+
+        LinearLayout connection = card();
+        LinearLayout connectionHeader = new LinearLayout(this);
+        connectionHeader.setOrientation(LinearLayout.HORIZONTAL);
+        connectionHeader.setGravity(Gravity.CENTER_VERTICAL);
+        connection.addView(connectionHeader, match());
+        TextView connectionIcon = text("↗", 20, ACCENT, Gravity.CENTER);
+        connectionIcon.setBackground(bg(PANEL, 13));
+        connectionHeader.addView(connectionIcon, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        LinearLayout connectionCopy = new LinearLayout(this);
+        connectionCopy.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams connectionCopyLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        connectionCopyLp.leftMargin = dp(10);
+        connectionHeader.addView(connectionCopy, connectionCopyLp);
+        TextView connectionTitle = text("Подключение", 15, WHITE, Gravity.START);
+        connectionTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        connectionCopy.addView(connectionTitle);
+        String serverHost = android.net.Uri.parse(serverBase).getHost();
+        connectionCopy.addView(text(serverHost == null ? serverBase : serverHost, 11, MUTED, Gravity.START),
+                topMargin(match(), 3));
+        connection.addView(text("Адрес сохранён на устройстве и не должен меняться после перезапуска сервера.",
+                11, MUTED, Gravity.START), topMargin(match(), 11));
+
+        LinearLayout connectionActions = new LinearLayout(this);
+        connectionActions.setOrientation(LinearLayout.HORIZONTAL);
+        connection.addView(connectionActions, topMargin(match(), 11));
+        Button checkServer = button("Проверить", true);
+        Button changeServer = button("Изменить адрес", false);
+        connectionActions.addView(checkServer, new LinearLayout.LayoutParams(0, dp(45), 1f));
+        LinearLayout.LayoutParams changeServerLp = new LinearLayout.LayoutParams(0, dp(45), 1f);
+        changeServerLp.leftMargin = dp(8);
+        connectionActions.addView(changeServer, changeServerLp);
+        checkServer.setOnClickListener(v -> {
+            checkServer.setEnabled(false);
+            checkServer.setText("Проверяем…");
+            api("GET", "/health", null, (data, error) -> {
+                checkServer.setEnabled(true);
+                checkServer.setText("Проверить");
+                if (error != null) toast("Сервер недоступен: " + error);
+                else toast("Сервер Kemtiz доступен.");
+            });
+        });
+        changeServer.setOnClickListener(v -> {
+            EditText address = field("https://имя-устройства.tailnet.ts.net");
+            address.setSingleLine(true);
+            address.setText(serverBase);
+            new AlertDialog.Builder(this)
+                    .setTitle("Адрес сервера")
+                    .setMessage("Новый адрес сохранится на этом телефоне.")
+                    .setView(address)
+                    .setNegativeButton("Отмена", null)
+                    .setPositiveButton("Сохранить", (dialog, which) -> {
+                        String candidate = normalizeServerBase(address.getText().toString());
+                        if (candidate.isEmpty()) {
+                            toast("Проверь адрес сервера.");
+                            return;
+                        }
+                        serverBase = candidate;
+                        prefs.edit().putString(SERVER_PREF, serverBase).apply();
+                        closeSocket();
+                        api("GET", "/health", null, (result, error) -> {
+                            if (error != null) {
+                                toast("Адрес сохранён, но сервер пока не отвечает.");
+                            } else {
+                                socket();
+                                toast("Адрес сохранён, сервер отвечает.");
+                            }
+                        });
+                    }).show();
+        });
+        page.addView(connection, topMargin(match(), 9));
+
+        LinearLayout notifications = card();
+        notifications.setOrientation(LinearLayout.HORIZONTAL);
+        notifications.setGravity(Gravity.CENTER_VERTICAL);
+        TextView notificationIcon = text("♢", 20, ACCENT, Gravity.CENTER);
+        notificationIcon.setBackground(bg(PANEL, 13));
+        notifications.addView(notificationIcon, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        LinearLayout notificationCopy = new LinearLayout(this);
+        notificationCopy.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams notificationCopyLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        notificationCopyLp.leftMargin = dp(10);
+        notifications.addView(notificationCopy, notificationCopyLp);
+        TextView notificationTitle = text("Уведомления", 14, WHITE, Gravity.START);
+        notificationTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        notificationCopy.addView(notificationTitle);
+        notificationCopy.addView(text("Звук, вибрация и значок приложения", 11, MUTED, Gravity.START),
+                topMargin(match(), 3));
+        Button notificationSettings = button("Открыть", false);
+        notifications.addView(notificationSettings, new LinearLayout.LayoutParams(dp(82), dp(43)));
+        notificationSettings.setOnClickListener(v -> {
+            try {
+                Intent settings = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                settings.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName());
+                startActivity(settings);
+            } catch (Exception ignored) {
+                toast("Открой настройки Android → Приложения → Kemtiz → Уведомления.");
+            }
+        });
+        page.addView(notifications, topMargin(match(), 9));
+
+        LinearLayout about = card();
+        about.addView(text("О KEMTIZ", 10, ACCENT, Gravity.START));
+        about.addView(text("Общайся, находи друзей и создавай чаты в своём кругу.",
+                13, WHITE, Gravity.START), topMargin(match(), 7));
+        page.addView(about, topMargin(match(), 9));
+
+        Button logout = button("Выйти из аккаунта", false);
+        page.addView(logout, topMargin(match(), 13));
+        logout.setOnClickListener(v -> {
+            clearSession();
+            login("");
+        });
     }
 
 
@@ -830,6 +1098,22 @@ public class KemtizActivity extends Activity {
         });
     }
 
+    private void emptyIn(LinearLayout parent, String title, String description, String action, Runnable task) {
+        LinearLayout box = card();
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView icon = text("✦", 25, ACCENT, Gravity.CENTER);
+        icon.setBackground(bg(PANEL, 28));
+        box.addView(icon, new LinearLayout.LayoutParams(dp(54), dp(54)));
+        TextView heading = text(title, 16, WHITE, Gravity.CENTER);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        box.addView(heading, topMargin(match(), 10));
+        box.addView(text(description, 12, MUTED, Gravity.CENTER), topMargin(match(), 5));
+        Button actionButton = button(action, true);
+        box.addView(actionButton, topMargin(match(), 13));
+        actionButton.setOnClickListener(v -> task.run());
+        parent.addView(box);
+    }
+
     private void empty(String title,String description,String action,Runnable task){
         LinearLayout box=card();box.setGravity(Gravity.CENTER_HORIZONTAL);
         TextView icon=text("✦",27,ACCENT,Gravity.CENTER);icon.setBackground(bg(PANEL,30));box.addView(icon,new LinearLayout.LayoutParams(dp(58),dp(58)));
@@ -912,7 +1196,15 @@ public class KemtizActivity extends Activity {
     }
 
     private void handlePushIntent(Intent intent) {
-        if (intent == null || !intent.hasExtra("open_chat_id") || token.isEmpty()) return;
+        if (intent == null || token.isEmpty()) return;
+        String requestedScreen = intent.getStringExtra("open_screen");
+        if ("requests".equals(requestedScreen)) {
+            intent.removeExtra("open_screen");
+            screen = "requests";
+            shell();
+            return;
+        }
+        if (!intent.hasExtra("open_chat_id")) return;
         long requestedChatId = intent.getLongExtra("open_chat_id", -1);
         intent.removeExtra("open_chat_id");
         if (requestedChatId <= 0) return;
@@ -1012,6 +1304,9 @@ public class KemtizActivity extends Activity {
         PendingIntent pending = PendingIntent.getActivity(this,
                 4100 + (int) Math.max(0, message.optLong("chat_id", 0) % 500000), open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        SharedPreferences badgePrefs = getSharedPreferences("kemtiz", MODE_PRIVATE);
+        int badgeCount = badgePrefs.getInt("notification_badge_count", 0) + 1;
+        badgePrefs.edit().putInt("notification_badge_count", badgeCount).apply();
         Notification notification = new Notification.Builder(this, KemtizPushService.MESSAGE_CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setColor(Color.rgb(229, 48, 67))
@@ -1022,7 +1317,8 @@ public class KemtizActivity extends Activity {
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_MESSAGE)
                 .setShowWhen(true)
-                .setNumber(getSharedPreferences("kemtiz", MODE_PRIVATE).getInt("notification_badge_count", 1))
+                .setNumber(badgeCount)
+                .setBadgeIconType(Notification.BADGE_ICON_SMALL)
                 .setVibrate(new long[]{0, 220, 120, 220})
                 .build();
         manager.notify(10000 + (int) Math.max(0, message.optLong("chat_id", 0) % 90000), notification);
