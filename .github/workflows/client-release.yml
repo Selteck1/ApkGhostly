@@ -9,7 +9,6 @@ on:
       - 'content/packs/community.lineup'
       - 'client/**'
       - 'scripts/prepare_client_assets.py'
-      - '.github/workflows/client-release.yml'
   workflow_dispatch:
 
 permissions:
@@ -22,6 +21,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      LINEUP_KEYSTORE_BASE64_SECRET: ${{ secrets.LINEUP_KEYSTORE_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,7 +55,7 @@ jobs:
 
       - name: Configure persistent release signing
         id: signing
-        if: ${{ secrets.LINEUP_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.LINEUP_KEYSTORE_BASE64_SECRET != '' }}
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.LINEUP_KEYSTORE_BASE64 }}
