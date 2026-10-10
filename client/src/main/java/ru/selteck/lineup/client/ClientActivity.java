@@ -309,16 +309,12 @@ public class ClientActivity extends Activity {
 
     private void showList(String query){
         if(!unlocked){renderGate("Проверь актуальность базы перед просмотром.",null);return;}
-        shell("Блоки","ВСТРОЕННАЯ БАЗА · v"+BuildConfig.CONTENT_REVISION);
+        shell("Блоки","ОБНОВЛЯЕМЫЙ КАТАЛОГ · v"+latestRevision);
         addText("Тактики под рукой.",25,FG,true,2,5);
         addText(blocks.size()+" блоков · "+images.size()+" файлов в базе",12,MUTED,false,0,14);
         EditText search=field("Поиск по названию, карте или описанию",query);
         addButton("Найти",()->showList(search.getText().toString().trim()),true);
-        if(latestRevision>BuildConfig.CONTENT_REVISION){
-            addCard(text("Есть более новая база. Для её установки открой канал обновлений в Telegram.",13,Color.rgb(255,207,118),true));
-            addButton("Обновить приложение",this::openTelegram,false);
-        }
-        if(blocks.isEmpty()){addCard(text("В этой сборке пока нет опубликованных блоков. Администратор должен добавить материалы и собрать новое APK.",14,MUTED,false));return;}
+        if(blocks.isEmpty()){addCard(text("Пока нет опубликованных блоков. Материалы появятся после публикации администратором.",14,MUTED,false));return;}
         String q=query==null?"":query.trim().toLowerCase(Locale.ROOT);int shown=0;
         for(GuideBlock b:blocks){
             String haystack=(b.title+" "+b.map+" "+b.category+" "+b.side+" "+b.description).toLowerCase(Locale.ROOT);
