@@ -5,10 +5,12 @@ import json
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKS = ROOT / "content" / "packs"
 OUTPUT = ROOT / "content" / "catalog.json"
+POLICY = ROOT / "content" / "policy.json"
 
 
 def read_previous():
@@ -25,6 +27,7 @@ def main():
     previous = read_previous()
     entries = []
     seen = set()
+    published_telegram_url = None
     for path in sorted(PACKS.glob("*.lineup")):
         raw = path.read_bytes()
         try:
@@ -34,6 +37,11 @@ def main():
             raise SystemExit(f"Invalid package {path.name}: {exc}") from exc
         if manifest.get("format") != "lineup" or manifest.get("schemaVersion") != 1:
             raise SystemExit(f"Unsupported package format: {path.name}")
+        if path.stem == "community" and isinstance(manifest.get("telegramUrl"), str):
+            candidate = manifest["telegramUrl"].strip()
+            parsed = urlparse(candidate)
+            if parsed.scheme == "https" and parsed.hostname in {"t.me", "www.t.me", "telegram.me", "www.telegram.me"}:
+                published_telegram_url = candidate
         pack_id = path.stem
         if not pack_id or not all(ch.isalnum() or ch in "_-" for ch in pack_id):
             raise SystemExit(f"Package name must use letters, digits, underscore or hyphen: {path.name}")
@@ -68,6 +76,17 @@ def main():
         "packs": entries,
     }
     OUTPUT.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if published_telegram_url:
+        try:
+            policy = json.loads(POLICY.read_text(encoding="utf-8")) if POLICY.exists() else {"schemaVersion": 1, "minClientRevision": 0}
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            policy = {"schemaVersion": 1, "minClientRevision": 0}
+        if policy.get("telegramUrl") != published_telegram_url:
+            policy["schemaVersion"] = 1
+            policy.setdefault("minClientRevision", 0)
+            policy["telegramUrl"] = published_telegram_url
+            POLICY.write_text(json.dumps(policy, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print("Updated Telegram link in policy.json")
     print(f"Wrote catalog revision {revision} with {len(entries)} package(s)")
 
 
