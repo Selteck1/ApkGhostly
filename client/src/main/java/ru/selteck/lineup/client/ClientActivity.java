@@ -30,6 +30,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -59,6 +60,11 @@ public class ClientActivity extends Activity {
     private static final class GuideBlock {
         String id,title,map,category,side,description;
         final List<String> photoFiles=new ArrayList<>();
+    }
+    private static final class RemoteContent {
+        final List<GuideBlock> blocks=new ArrayList<>();
+        final Map<String,byte[]> images=new HashMap<>();
+        long revision=0;
     }
 
     @Override protected void onCreate(Bundle state){
@@ -110,7 +116,7 @@ public class ClientActivity extends Activity {
     private void renderGate(String message,String detail){
         unlocked=false;handler.removeCallbacks(poll);shell("LINEUP","СПРАВОЧНИК STANDOFF 2");
         addText(forceLocked?"Эта версия больше не поддерживается":"Проверка версии приложения",23,FG,true,3,8);
-        addText("Блоки и фотографии хранятся внутри APK. Перед входом приложение проверяет, не заблокировал ли администратор старую версию.",14,MUTED,false,0,16);
+        addText("Блоки и фотографии загружаются из бесплатного каталога GitHub. Новые материалы появляются автоматически, без установки нового APK.",14,MUTED,false,0,16);
         addCard(text(message,14,forceLocked?Color.rgb(255,130,150):MINT,true));
         if(detail!=null&&!detail.trim().isEmpty())addText(detail,12,Color.rgb(255,160,170),false,2,12);
         addButton("Проверить ещё раз",()->checkPolicy(true),true);
