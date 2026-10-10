@@ -10,8 +10,8 @@ android {
         applicationId "com.kemtiz.app"
         minSdk 26
         targetSdk 35
-        versionCode 28
-        versionName "2.9.0"
+        versionCode 29
+        versionName "3.0.0"
     }
 }
 
@@ -21,4 +21,6 @@ dependencies {
     implementation "com.google.android.libraries.identity.googleid:googleid:1.2.1"
     implementation "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "io.github.webrtc-sdk:android:150.7871.01"
+    implementation platform("com.google.firebase:firebase-bom:35.0.0")
+    implementation "com.google.firebase:firebase-messaging"
 }
