@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Lineup admin and user APKs
 
 on:
   push:
@@ -25,12 +25,27 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK
-        run: gradle assembleDebug
-      - name: Upload test APK
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Prepare embedded client content
+        run: python scripts/prepare_client_assets.py
+      - name: Build both debug APKs
+        run: |
+          REVISION="$(python -c 'import json; print(json.load(open("content/catalog.json"))["revision"])')"
+          gradle assembleDebug -PcontentRevision="$REVISION" -PbuildVersionCode=1
+      - name: Upload admin APK
         uses: actions/upload-artifact@v4
         with:
-          name: lineup-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: lineup-admin-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+      - name: Upload user APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lineup-user-apk-debug
+          path: client/build/outputs/apk/debug/client-debug.apk
+          if-no-files-found: error
+          retention-days: 30
