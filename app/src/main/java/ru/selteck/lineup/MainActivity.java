@@ -286,7 +286,7 @@ public class MainActivity extends Activity {
 
     private void changeTelegramLink(){
         if(!adminSession||sessionAdminPassword.isEmpty()){showAdminLogin();return;}
-        EditText link=field("https://t.me/your_channel",prefs.getString("telegram_url","https://t.me/"));
+        EditText link=new EditText(this);link.setSingleLine(true);link.setText(prefs.getString("telegram_url","https://t.me/"));link.setHint("https://t.me/your_channel");link.setTextColor(FG);link.setHintTextColor(MUTED);link.setPadding(dp(12),dp(10),dp(12),dp(10));link.setBackground(shape(SURFACE2,PURPLE,12));
         new AlertDialog.Builder(this).setTitle("Ссылка обновления в Telegram").setMessage("Эта ссылка будет открываться в приложении игрока, когда его версия заблокирована.")
             .setView(link).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(d,w)->{
                 String value=link.getText().toString().trim();
