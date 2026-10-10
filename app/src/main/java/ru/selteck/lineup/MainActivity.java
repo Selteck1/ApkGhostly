@@ -203,7 +203,7 @@ public class MainActivity extends Activity {
             +"git add content/packs/community.lineup content/catalog.json content/policy.json\n"
             +"git commit -m \"Update Lineup content\" || echo \"Нет изменений для коммита\"\n"
             +"git push origin main";
-        String setupCommands="pkg update -y\npkg install git python gh -y\ntermux-setup-storage\ngh auth login\ngh auth setup-git\ngit clone https://github.com/Selteck1/ApkGhostly.git ~/ApkGhostly";
+        String setupCommands="pkg update -y\npkg install git python gh -y\ntermux-setup-storage\ngh auth login\ngh auth setup-git\ngit config --global user.name \"Lineup Admin\"\ngit config --global user.email \"lineup@users.noreply.github.com\"\ngit clone https://github.com/Selteck1/ApkGhostly.git ~/ApkGhostly";
         new AlertDialog.Builder(this).setTitle("Команды обновления для Termux")
             .setMessage("1. Если ещё не настраивал Termux, один раз выполни первоначальную настройку.\n2. Файл community.lineup должен лежать в Download / Загрузки.\n3. Скопируй команды обновления и вставь их в Termux.\n\nКОМАНДЫ ОБНОВЛЕНИЯ:\n\n"+updateCommands)
             .setNeutralButton("Скопировать настройку",(d,w)->copyText("Команды настройки Termux",setupCommands))
