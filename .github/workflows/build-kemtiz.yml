@@ -1,4 +1,4 @@
-name: Build Kemtiz Android APK 2.8.0
+name: Build Kemtiz Android APK 2.9.0
 
 on:
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Kemtiz-Android-2.8.0
+          name: Kemtiz-Android-2.9.0
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Package Windows PC server
         run: |
@@ -33,7 +33,7 @@ jobs:
           cp kemtiz/server.py kemtiz/requirements.txt dist/Kemtiz-PC-Server/kemtiz/
           cp start_kemtiz_server.bat start_kemtiz_public.bat start_kemtiz_tunnel.bat README_PC_SERVER_RU.md dist/Kemtiz-PC-Server/
           cat > dist/Kemtiz-PC-Server/START_HERE.txt <<'EOF'
-          KEMTIZ PC SERVER 2.8.0
+          KEMTIZ PC SERVER 2.9.0
           1. Install Python 3.12+ for Windows.
           2. Start start_kemtiz_server.bat and keep the window open.
           3. For same Wi-Fi, enter http://<PC IPv4>:8000 in Kemtiz -> SVOY SERVER.
@@ -45,5 +45,5 @@ jobs:
       - name: Upload Windows PC server package
         uses: actions/upload-artifact@v4
         with:
-          name: Kemtiz-PC-Server-2.8.0
+          name: Kemtiz-PC-Server-2.9.0
           path: dist/Kemtiz-PC-Server.zip

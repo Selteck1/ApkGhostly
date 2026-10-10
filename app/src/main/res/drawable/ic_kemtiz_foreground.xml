@@ -4,36 +4,13 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <!-- Keep the mark inside the adaptive-icon safe area. -->
-    <path
-        android:fillColor="#171126"
-        android:pathData="M54,10 A44,44 0,1 0,54 98 A44,44 0,1 0,54 10" />
-
-    <!-- Rear message bubble -->
-    <path
-        android:fillColor="#453078"
-        android:pathData="M40,50 L75,50 C82,50 87,55 87,62 C87,69 82,74 75,74 L63,74 L53,83 L53,74 L40,74 C33,74 28,69 28,62 C28,55 33,50 40,50 Z" />
-
-    <!-- Main message bubble -->
     <path
         android:fillColor="#7652DB"
-        android:pathData="M35,24 L69,24 C79,24 86,31 86,41 C86,51 79,58 69,58 L53,58 L41,69 L41,58 L35,58 C25,58 18,51 18,41 C18,31 25,24 35,24 Z" />
-
-    <path
-        android:strokeColor="#C8B8FF"
-        android:strokeWidth="1.8"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000"
-        android:pathData="M35,24 L69,24 C79,24 86,31 86,41 C86,51 79,58 69,58 L53,58 L41,69 L41,58 L35,58 C25,58 18,51 18,41 C18,31 25,24 35,24 Z" />
-
-    <!-- K monogram -->
+        android:pathData="M31,22 L77,22 C83.63,22 89,27.37 89,34 L89,61 C89,67.63 83.63,73 77,73 L60,73 L43,88 L43,73 L31,73 C24.37,73 19,67.63 19,61 L19,34 C19,27.37 24.37,22 31,22 Z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M34,31 L41,31 L41,40 L51,31 L61,31 L48,42 L62,52 L52,52 L42,45 L41,46 L41,52 L34,52 Z" />
-
-    <!-- Signature spark -->
+        android:pathData="M35,34 L43,34 L43,47 L57,34 L68,34 L50,50 L69,64 L57,64 L43,53 L43,64 L35,64 Z" />
     <path
-        android:fillColor="#E7DEFF"
-        android:pathData="M78,13 L80,18 L85,20 L80,22 L78,27 L76,22 L71,20 L76,18 Z" />
+        android:fillColor="#CDBEFF"
+        android:pathData="M76,13 L78,18 L83,20 L78,22 L76,27 L74,22 L69,20 L74,18 Z" />
 </vector>

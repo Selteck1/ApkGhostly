@@ -21,6 +21,7 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -257,6 +258,7 @@ public class KemtizActivity extends Activity {
         saveServer.setOnClickListener(v -> saveAndCheckServer());
 
         setContentView(root);
+        applySystemBarInsets(root);
     }
 
     private void loginWithPassword() {
@@ -414,6 +416,7 @@ public class KemtizActivity extends Activity {
         navLp.topMargin = dp(5);
         root.addView(nav, navLp);
         setContentView(root);
+        applySystemBarInsets(root);
         requestNotificationPermission();
         render();
     }
@@ -460,6 +463,7 @@ public class KemtizActivity extends Activity {
         composerLp.bottomMargin = dp(7);
         root.addView(composerShell, composerLp);
         setContentView(root);
+        applySystemBarInsets(root);
         requestNotificationPermission();
         chat();
     }
@@ -1110,6 +1114,16 @@ public class KemtizActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void applySystemBarInsets(View target) {
+        if (Build.VERSION.SDK_INT < 35 || target == null) return;
+        target.setOnApplyWindowInsetsListener((view, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return insets;
+        });
+        target.requestApplyInsets();
     }
 
     // UI helpers

@@ -5,13 +5,20 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
+import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -43,6 +50,8 @@ import org.webrtc.SurfaceTextureHelper;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 import org.webrtc.RendererCommon;
+import org.webrtc.audio.AudioDeviceModule;
+import org.webrtc.audio.JavaAudioDeviceModule;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -89,12 +98,21 @@ public class CallActivity extends Activity {
     private WebSocket socket;
     private AudioManager audioManager;
     private FrameLayout frame;
+    private FrameLayout localTile;
     private SurfaceViewRenderer remoteRenderer;
     private SurfaceViewRenderer localRenderer;
+    private TextView remotePlaceholder;
     private TextView statusView;
-    private Button micButton;
-    private Button cameraButton;
+    private LinearLayout controls;
+    private CallControlView micButton;
+    private CallControlView cameraButton;
+    private CallControlView endButton;
     private PeerConnectionFactory factory;
+    private AudioDeviceModule audioDeviceModule;
+    private AudioTrack remoteAudioTrack;
+    private android.media.AudioDeviceInfo previousCommunicationDevice;
+    private int previousVoiceCallVolume = -1;
+    private boolean remoteVideoAttached = false;
     private PeerConnection peerConnection;
     private EglBase eglBase;
     private AudioSource audioSource;
@@ -137,49 +155,177 @@ public class CallActivity extends Activity {
         frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
         remoteRenderer = new SurfaceViewRenderer(this);
+        remoteRenderer.setBackgroundColor(Color.BLACK);
         frame.addView(remoteRenderer, new FrameLayout.LayoutParams(-1, -1));
+
+        remotePlaceholder = new TextView(this);
+        remotePlaceholder.setText("KEMTIZ\\n\\nОжидаем видеосвязь…");
+        remotePlaceholder.setTextColor(WHITE);
+        remotePlaceholder.setTextSize(17);
+        remotePlaceholder.setGravity(Gravity.CENTER);
+        remotePlaceholder.setBackgroundColor(BG);
+        frame.addView(remotePlaceholder, new FrameLayout.LayoutParams(-1, -1));
+
+        localTile = new FrameLayout(this);
+        GradientDrawable tileBackground = new GradientDrawable();
+        tileBackground.setColor(Color.rgb(24, 24, 34));
+        tileBackground.setCornerRadius(dp(18));
+        tileBackground.setStroke(dp(1), Color.rgb(139, 116, 205));
+        localTile.setBackground(tileBackground);
+        localTile.setClipToOutline(true);
         localRenderer = new SurfaceViewRenderer(this);
-        FrameLayout.LayoutParams localLp = new FrameLayout.LayoutParams(dp(112), dp(158), Gravity.TOP | Gravity.END);
-        localLp.setMargins(0, dp(16), dp(14), 0);
-        frame.addView(localRenderer, localLp);
+        localRenderer.setBackgroundColor(Color.rgb(24, 24, 34));
+        localTile.addView(localRenderer, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout.LayoutParams localLp = new FrameLayout.LayoutParams(
+                dp(104), dp(148), Gravity.TOP | Gravity.END);
+        localLp.setMargins(0, dp(82), dp(14), 0);
+        frame.addView(localTile, localLp);
+        localTile.setContentDescription("Моё видео. Нажми, чтобы переключить камеру");
+        localTile.setOnClickListener(v -> switchCamera());
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(8), dp(10), dp(140), dp(10));
+        header.setBackgroundColor(0x77090A0F);
+        TextView back = new TextView(this);
+        back.setText("‹");
+        back.setTextSize(38);
+        back.setTextColor(WHITE);
+        back.setGravity(Gravity.CENTER);
+        back.setContentDescription("Вернуться и завершить звонок");
+        header.addView(back, new LinearLayout.LayoutParams(dp(42), dp(48)));
+        back.setOnClickListener(v -> endCall("Звонок завершён."));
+
+        LinearLayout titleStack = new LinearLayout(this);
+        titleStack.setOrientation(LinearLayout.VERTICAL);
+        titleStack.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(titleStack, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView name = new TextView(this);
+        name.setText(targetName);
+        name.setTextColor(WHITE);
+        name.setTextSize(16);
+        name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        name.setMaxLines(1);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        titleStack.addView(name, new LinearLayout.LayoutParams(-1, -2));
         statusView = new TextView(this);
-        statusView.setTextColor(WHITE);
-        statusView.setTextSize(14);
-        statusView.setGravity(Gravity.CENTER_VERTICAL);
-        statusView.setPadding(dp(14), dp(10), dp(14), dp(10));
-        statusView.setBackgroundColor(0x99090A0F);
-        frame.addView(statusView, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
-        LinearLayout controls = new LinearLayout(this);
+        statusView.setTextColor(Color.rgb(214, 208, 231));
+        statusView.setTextSize(12);
+        statusView.setMaxLines(2);
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(-1, -2);
+        statusLp.topMargin = dp(2);
+        titleStack.addView(statusView, statusLp);
+        frame.addView(header, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+
+        controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER);
-        controls.setPadding(dp(6), dp(10), dp(6), dp(14));
-        controls.setBackgroundColor(0x99090A0F);
-        micButton = controlButton("🎙 Микрофон");
-        cameraButton = controlButton("📷 Камера");
-        Button switchButton = controlButton("↻ Перевернуть");
-        Button endButton = controlButton("Завершить");
-        endButton.setBackgroundColor(Color.rgb(182, 45, 68));
-        controls.addView(micButton, new LinearLayout.LayoutParams(0, dp(50), 1f));
-        controls.addView(cameraButton, new LinearLayout.LayoutParams(0, dp(50), 1f));
-        controls.addView(switchButton, new LinearLayout.LayoutParams(0, dp(50), 1f));
-        controls.addView(endButton, new LinearLayout.LayoutParams(0, dp(50), 1f));
+        controls.setPadding(dp(24), dp(12), dp(24), dp(18));
+        controls.setBackgroundColor(0x55090A0F);
+        cameraButton = new CallControlView(this, CallControlView.CAMERA, Color.WHITE);
+        endButton = new CallControlView(this, CallControlView.HANGUP, Color.rgb(226, 39, 76));
+        micButton = new CallControlView(this, CallControlView.MICROPHONE, Color.WHITE);
+        cameraButton.setContentDescription("Выключить камеру");
+        endButton.setContentDescription("Завершить звонок");
+        micButton.setContentDescription("Выключить микрофон");
+        LinearLayout.LayoutParams cameraLp = new LinearLayout.LayoutParams(dp(58), dp(58));
+        cameraLp.rightMargin = dp(30);
+        controls.addView(cameraButton, cameraLp);
+        LinearLayout.LayoutParams endLp = new LinearLayout.LayoutParams(dp(64), dp(64));
+        endLp.rightMargin = dp(30);
+        controls.addView(endButton, endLp);
+        controls.addView(micButton, new LinearLayout.LayoutParams(dp(58), dp(58)));
         frame.addView(controls, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
-        micButton.setOnClickListener(v -> toggleMic());
         cameraButton.setOnClickListener(v -> toggleCamera());
-        switchButton.setOnClickListener(v -> switchCamera());
+        micButton.setOnClickListener(v -> toggleMic());
         endButton.setOnClickListener(v -> endCall("Звонок завершён."));
+
         setContentView(frame);
+        if (Build.VERSION.SDK_INT >= 35) {
+            frame.setOnApplyWindowInsetsListener((v, insets) -> {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                header.setPadding(dp(8) + bars.left, dp(7) + bars.top,
+                        dp(140) + bars.right, dp(7));
+                controls.setPadding(dp(24) + bars.left, dp(10),
+                        dp(24) + bars.right, dp(14) + bars.bottom);
+                FrameLayout.LayoutParams tileLp = (FrameLayout.LayoutParams) localTile.getLayoutParams();
+                tileLp.topMargin = dp(82) + bars.top;
+                tileLp.rightMargin = dp(14) + bars.right;
+                localTile.setLayoutParams(tileLp);
+                return insets;
+            });
+            frame.requestApplyInsets();
+        }
     }
 
-    private Button controlButton(String title) {
-        Button button = new Button(this);
-        button.setText(title);
-        button.setTextColor(WHITE);
-        button.setTextSize(11);
-        button.setAllCaps(false);
-        button.setPadding(dp(3), dp(4), dp(3), dp(4));
-        button.setBackgroundColor(Color.rgb(46, 43, 58));
-        return button;
+    /** Hand-drawn vector-like call controls, consistent across Android skins. */
+    private static final class CallControlView extends View {
+        static final int CAMERA = 1, HANGUP = 2, MICROPHONE = 3;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int icon;
+        private int fill;
+        private boolean crossedOut;
+
+        CallControlView(Context context, int icon, int fill) {
+            super(context);
+            this.icon = icon;
+            this.fill = fill;
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        }
+        void setFill(int color) { fill = color; invalidate(); }
+        void setCrossedOut(boolean value) { crossedOut = value; invalidate(); }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float cx = getWidth()/2f, cy = getHeight()/2f;
+            float radius = Math.min(cx, cy) - dp(2);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(fill);
+            canvas.drawCircle(cx, cy, radius, paint);
+            int ink = fill == Color.WHITE ? Color.rgb(30, 28, 40) : Color.WHITE;
+            paint.setColor(ink);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(2.4f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            if (icon == CAMERA) {
+                RectF body = new RectF(cx-dp(11), cy-dp(7), cx+dp(5), cy+dp(7));
+                canvas.drawRoundRect(body, dp(2), dp(2), paint);
+                Path lens = new Path();
+                lens.moveTo(cx+dp(5), cy-dp(4));
+                lens.lineTo(cx+dp(12), cy-dp(8));
+                lens.lineTo(cx+dp(12), cy+dp(8));
+                lens.lineTo(cx+dp(5), cy+dp(4));
+                lens.close();
+                canvas.drawPath(lens, paint);
+            } else if (icon == HANGUP) {
+                Path handset = new Path();
+                handset.moveTo(cx-dp(12), cy-dp(5));
+                handset.cubicTo(cx-dp(9), cy+dp(7), cx+dp(4), cy+dp(13), cx+dp(12), cy+dp(5));
+                handset.lineTo(cx+dp(7), cy);
+                handset.cubicTo(cx+dp(3), cy+dp(3), cx, cy+dp(1), cx-dp(2), cy-dp(3));
+                handset.lineTo(cx-dp(5), cy-dp(8));
+                handset.close();
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawPath(handset, paint);
+            } else {
+                RectF capsule = new RectF(cx-dp(4), cy-dp(12), cx+dp(4), cy+dp(3));
+                canvas.drawRoundRect(capsule, dp(4), dp(4), paint);
+                Path stand = new Path();
+                stand.moveTo(cx-dp(9), cy);
+                stand.cubicTo(cx-dp(9), cy+dp(12), cx+dp(9), cy+dp(12), cx+dp(9), cy);
+                stand.moveTo(cx, cy+dp(9)); stand.lineTo(cx, cy+dp(13));
+                stand.moveTo(cx-dp(5), cy+dp(13)); stand.lineTo(cx+dp(5), cy+dp(13));
+                canvas.drawPath(stand, paint);
+            }
+            if (crossedOut) {
+                paint.setColor(ink);
+                paint.setStrokeWidth(dp(2.5f));
+                canvas.drawLine(cx-dp(12), cy+dp(12), cx+dp(12), cy-dp(12), paint);
+            }
+        }
+        private float dp(float value) { return value * getResources().getDisplayMetrics().density; }
     }
 
     private boolean hasMediaPermissions() {
@@ -286,6 +432,45 @@ public class CallActivity extends Activity {
                     factoryInitialized = true;
                 }
             }
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null) {
+                previousAudioMode = audioManager.getMode();
+                previousSpeakerphone = audioManager.isSpeakerphoneOn();
+                previousVoiceCallVolume = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
+                int maxVoiceVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+                int safeVoiceVolume = Math.max(1, Math.round(maxVoiceVolume * 0.60f));
+                if (previousVoiceCallVolume > safeVoiceVolume) {
+                    audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, safeVoiceVolume, 0);
+                }
+                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    previousCommunicationDevice = audioManager.getCommunicationDevice();
+                    android.media.AudioDeviceInfo selectedDevice = null;
+                    for (android.media.AudioDeviceInfo device : audioManager.getAvailableCommunicationDevices()) {
+                        int type = device.getType();
+                        if (type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                                || type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
+                                || type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET
+                                || type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                                || type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET) {
+                            selectedDevice = device;
+                            break;
+                        }
+                    }
+                    if (selectedDevice == null) {
+                        for (android.media.AudioDeviceInfo device : audioManager.getAvailableCommunicationDevices()) {
+                            if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                                selectedDevice = device;
+                                break;
+                            }
+                        }
+                    }
+                    if (selectedDevice != null) audioManager.setCommunicationDevice(selectedDevice);
+                } else {
+                    audioManager.setSpeakerphoneOn(true);
+                }
+            }
+
             eglBase = EglBase.create();
             remoteRenderer.init(eglBase.getEglBaseContext(), null);
             remoteRenderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL);
@@ -294,7 +479,12 @@ public class CallActivity extends Activity {
             localRenderer.setMirror(true);
             localRenderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL);
             localRenderer.setEnableHardwareScaler(true);
+            audioDeviceModule = JavaAudioDeviceModule.builder(getApplicationContext())
+                    .setUseHardwareAcousticEchoCanceler(true)
+                    .setUseHardwareNoiseSuppressor(true)
+                    .createAudioDeviceModule();
             factory = PeerConnectionFactory.builder()
+                    .setAudioDeviceModule(audioDeviceModule)
                     .setVideoEncoderFactory(new DefaultVideoEncoderFactory(eglBase.getEglBaseContext(), true, true))
                     .setVideoDecoderFactory(new DefaultVideoDecoderFactory(eglBase.getEglBaseContext()))
                     .createPeerConnectionFactory();
@@ -315,18 +505,33 @@ public class CallActivity extends Activity {
             cameraCapturer.startCapture(640, 480, 24);
             videoTrack = factory.createVideoTrack("kemtiz-video", videoSource);
             videoTrack.addSink(localRenderer);
-            PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(
-                    Collections.singletonList(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()));
+            List<PeerConnection.IceServer> iceServers = new ArrayList<>();
+            iceServers.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
+            iceServers.add(PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer());
+            PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(iceServers);
             config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
             peerConnection = factory.createPeerConnection(config, new PeerConnection.Observer() {
                 @Override public void onSignalingChange(PeerConnection.SignalingState state) { }
                 @Override public void onIceConnectionChange(PeerConnection.IceConnectionState state) {
-                    status(state == PeerConnection.IceConnectionState.CONNECTED
-                            || state == PeerConnection.IceConnectionState.COMPLETED
-                            ? "Видеосвязь установлена" : "Подключаем видео и звук…");
+                    if (state == PeerConnection.IceConnectionState.CONNECTED
+                            || state == PeerConnection.IceConnectionState.COMPLETED) {
+                        status("Видео и звук подключены");
+                    } else if (state == PeerConnection.IceConnectionState.FAILED) {
+                        status("Сеть блокирует медиасвязь. Для этой сети может понадобиться TURN.");
+                    } else if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
+                        status("Связь прервана, пытаемся восстановить…");
+                    } else {
+                        status("Подключаем видео и звук…");
+                    }
                 }
                 @Override public void onStandardizedIceConnectionChange(PeerConnection.IceConnectionState state) { }
-                @Override public void onConnectionChange(PeerConnection.PeerConnectionState state) { }
+                @Override public void onConnectionChange(PeerConnection.PeerConnectionState state) {
+                    if (state == PeerConnection.PeerConnectionState.FAILED) {
+                        status("Не удалось связать телефоны. Проверь сеть или TURN.");
+                    } else if (state == PeerConnection.PeerConnectionState.CONNECTED) {
+                        status("Видео и звук подключены");
+                    }
+                }
                 @Override public void onIceConnectionReceivingChange(boolean receiving) { }
                 @Override public void onIceGatheringChange(PeerConnection.IceGatheringState state) { }
                 @Override public void onIceCandidate(IceCandidate candidate) {
@@ -341,23 +546,20 @@ public class CallActivity extends Activity {
                 @Override public void onDataChannel(org.webrtc.DataChannel channel) { }
                 @Override public void onRenegotiationNeeded() { }
                 @Override public void onAddTrack(RtpReceiver receiver, MediaStream[] streams) {
-                    MediaStreamTrack track = receiver.track();
-                    if (track instanceof VideoTrack) addRemoteVideo((VideoTrack) track);
+                    handleRemoteTrack(receiver == null ? null : receiver.track());
+                }
+                @Override public void onTrack(org.webrtc.RtpTransceiver transceiver) {
+                    if (transceiver != null && transceiver.getReceiver() != null) {
+                        handleRemoteTrack(transceiver.getReceiver().track());
+                    }
                 }
             });
             if (peerConnection == null) throw new IllegalStateException("Не удалось создать соединение");
             peerConnection.addTrack(audioTrack, Collections.singletonList("kemtiz-stream"));
             peerConnection.addTrack(videoTrack, Collections.singletonList("kemtiz-stream"));
-            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-            if (audioManager != null) {
-                previousAudioMode = audioManager.getMode();
-                previousSpeakerphone = audioManager.isSpeakerphoneOn();
-                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                audioManager.setSpeakerphoneOn(true);
-            }
             mediaPrepared = true;
-            micButton.setText("🎙 Микрофон: вкл.");
-            cameraButton.setText("📷 Камера: вкл.");
+            micButton.setCrossedOut(false);
+            cameraButton.setCrossedOut(false);
             return true;
         } catch (Exception e) {
             status("Ошибка звонка: " + (e.getMessage() == null ? "проверь разрешения" : e.getMessage()));
@@ -375,11 +577,28 @@ public class CallActivity extends Activity {
         return null;
     }
 
+    private void handleRemoteTrack(MediaStreamTrack track) {
+        if (track instanceof VideoTrack) {
+            addRemoteVideo((VideoTrack) track);
+        } else if (track instanceof AudioTrack) {
+            main.post(() -> {
+                if (isFinishing()) return;
+                remoteAudioTrack = (AudioTrack) track;
+                remoteAudioTrack.setEnabled(true);
+                remoteAudioTrack.setVolume(0.75);
+            });
+        }
+    }
+
     private void addRemoteVideo(VideoTrack track) {
         main.post(() -> {
             if (remoteRenderer != null && !isFinishing()) {
-                track.addSink(remoteRenderer);
-                status("Собеседник подключился");
+                if (!remoteVideoAttached) {
+                    track.addSink(remoteRenderer);
+                    remoteVideoAttached = true;
+                }
+                if (remotePlaceholder != null) remotePlaceholder.setVisibility(View.GONE);
+                status("Получаем видео собеседника…");
             }
         });
     }
@@ -459,14 +678,18 @@ public class CallActivity extends Activity {
     private void toggleMic() {
         micEnabled = !micEnabled;
         if (audioTrack != null) audioTrack.setEnabled(micEnabled);
-        if (micButton != null) micButton.setText(micEnabled ? "🎙 Микрофон: вкл." : "🔇 Микрофон: выкл.");
+        micButton.setCrossedOut(!micEnabled);
+        micButton.setContentDescription(micEnabled ? "Выключить микрофон" : "Включить микрофон");
+        micButton.setFill(micEnabled ? Color.WHITE : Color.rgb(76, 64, 92));
     }
 
     private void toggleCamera() {
         cameraEnabled = !cameraEnabled;
         if (videoTrack != null) videoTrack.setEnabled(cameraEnabled);
-        if (cameraButton != null) cameraButton.setText(cameraEnabled ? "📷 Камера: вкл." : "📷 Камера: выкл.");
-        if (localRenderer != null) localRenderer.setVisibility(cameraEnabled ? View.VISIBLE : View.INVISIBLE);
+        if (localTile != null) localTile.setVisibility(cameraEnabled ? View.VISIBLE : View.INVISIBLE);
+        cameraButton.setCrossedOut(!cameraEnabled);
+        cameraButton.setContentDescription(cameraEnabled ? "Выключить камеру" : "Включить камеру");
+        cameraButton.setFill(cameraEnabled ? Color.WHITE : Color.rgb(76, 64, 92));
     }
 
     private void switchCamera() {
@@ -514,6 +737,10 @@ public class CallActivity extends Activity {
         surfaceTextureHelper = null;
         try { if (factory != null) factory.dispose(); } catch (Exception ignored) { }
         factory = null;
+        try { if (audioDeviceModule != null) audioDeviceModule.release(); } catch (Exception ignored) { }
+        audioDeviceModule = null;
+        remoteAudioTrack = null;
+        remoteVideoAttached = false;
         mediaPrepared = false;
     }
 
@@ -527,7 +754,18 @@ public class CallActivity extends Activity {
         try { if (eglBase != null) eglBase.release(); } catch (Exception ignored) { }
         if (audioManager != null) {
             try {
-                audioManager.setSpeakerphoneOn(previousSpeakerphone);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (previousCommunicationDevice != null) {
+                        audioManager.setCommunicationDevice(previousCommunicationDevice);
+                    } else {
+                        audioManager.clearCommunicationDevice();
+                    }
+                } else {
+                    audioManager.setSpeakerphoneOn(previousSpeakerphone);
+                }
+                if (previousVoiceCallVolume >= 0) {
+                    audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, previousVoiceCallVolume, 0);
+                }
                 audioManager.setMode(previousAudioMode);
             } catch (Exception ignored) { }
         }
