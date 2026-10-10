@@ -121,7 +121,7 @@ public class ClientActivity extends Activity {
         if(detail!=null&&!detail.trim().isEmpty())addText(detail,12,Color.rgb(255,160,170),false,2,12);
         addButton("Проверить ещё раз",()->checkPolicy(true),true);
         addButton("Обновить через Telegram",this::openTelegram,false);
-        addText("Для проверки доступа нужен интернет. После успешной проверки уже встроенные материалы можно просматривать офлайн до закрытия приложения.",11,MUTED,false,12,0);
+        addText("Для загрузки свежей базы нужен интернет. После синхронизации материалы доступны до закрытия приложения.",11,MUTED,false,12,0);
     }
 
     private void checkPolicy(boolean showProgress){
@@ -156,6 +156,7 @@ public class ClientActivity extends Activity {
                     renderGate("Не удалось загрузить актуальную базу.",failure+"\nПодключись к интернету и повтори проверку.");
                     return;
                 }
+                boolean refreshScreen=showProgress||!unlocked||latest!=latestRevision||isLocked;
                 latestRevision=latest;minimumRevision=minimum;telegramUrl=link;
                 if(isLocked){
                     forceLocked=true;blocks.clear();images.clear();
@@ -166,7 +167,7 @@ public class ClientActivity extends Activity {
                 forceLocked=false;
                 blocks.clear();blocks.addAll(content.blocks);
                 images.clear();images.putAll(content.images);
-                unlocked=true;showList("");
+                unlocked=true;if(refreshScreen)showList("");
             });
         });
     }
