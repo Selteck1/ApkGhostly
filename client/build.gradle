@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.application'
+}
+
+def contentRevision = (project.findProperty('contentRevision') ?: '0').toString().toLong()
+def buildCode = (project.findProperty('buildVersionCode') ?: '1').toString().toInteger()
+
+android {
+    namespace 'ru.selteck.lineup.client'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'ru.selteck.lineup.client'
+        minSdk 24
+        targetSdk 35
+        versionCode buildCode
+        versionName "1.0." + contentRevision
+        buildConfigField 'long', 'CONTENT_REVISION', contentRevision.toString() + 'L'
+    }
+
+    buildFeatures { buildConfig true }
+
+    signingConfigs {
+        release {
+            def ksPath = System.getenv('LINEUP_KEYSTORE_PATH')
+            def ksPassword = System.getenv('LINEUP_KEYSTORE_PASSWORD')
+            def keyAliasValue = System.getenv('LINEUP_KEY_ALIAS')
+            def keyPasswordValue = System.getenv('LINEUP_KEY_PASSWORD')
+            if (ksPath && ksPassword && keyAliasValue && keyPasswordValue) {
+                storeFile file(ksPath)
+                storePassword ksPassword
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
+
+    buildTypes {
+        debug { }
+        release {
+            minifyEnabled false
+            if (System.getenv('LINEUP_KEYSTORE_PATH') &&
+                System.getenv('LINEUP_KEYSTORE_PASSWORD') &&
+                System.getenv('LINEUP_KEY_ALIAS') &&
+                System.getenv('LINEUP_KEY_PASSWORD')) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
