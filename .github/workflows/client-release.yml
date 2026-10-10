@@ -1,0 +1,113 @@
+name: Build Lineup user APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'content/catalog.json'
+      - 'content/policy.json'
+      - 'content/packs/community.lineup'
+      - 'client/**'
+      - 'scripts/prepare_client_assets.py'
+      - '.github/workflows/client-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lineup-user-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Prepare embedded database
+        id: content
+        shell: bash
+        run: |
+          OUTPUT="$(python scripts/prepare_client_assets.py)"
+          echo "$OUTPUT"
+          REVISION="$(echo "$OUTPUT" | cut -d= -f2)"
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          echo "build_code=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure persistent release signing
+        id: signing
+        if: ${{ secrets.LINEUP_KEYSTORE_BASE64 != '' }}
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LINEUP_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_SECRET: ${{ secrets.LINEUP_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.LINEUP_KEY_ALIAS }}
+          KEY_PASSWORD_SECRET: ${{ secrets.LINEUP_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/lineup-release.jks"
+          echo "LINEUP_KEYSTORE_PATH=$RUNNER_TEMP/lineup-release.jks" >> "$GITHUB_ENV"
+          echo "LINEUP_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+          echo "LINEUP_KEY_ALIAS=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
+          echo "LINEUP_KEY_PASSWORD=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed user APK
+        if: ${{ steps.signing.outputs.signed == 'true' }}
+        run: |
+          gradle :client:assembleRelease \
+            -PcontentRevision=${{ steps.content.outputs.revision }} \
+            -PbuildVersionCode=${{ steps.content.outputs.build_code }}
+          mkdir -p dist
+          cp client/build/outputs/apk/release/client-release.apk dist/Lineup-Client.apk
+          printf 'signed=true\nrevision=%s\nversionCode=%s\n' \
+            '${{ steps.content.outputs.revision }}' '${{ steps.content.outputs.build_code }}' > dist/build-info.txt
+
+      - name: Build test APK without release key
+        if: ${{ steps.signing.outputs.signed != 'true' }}
+        run: |
+          gradle :client:assembleDebug \
+            -PcontentRevision=${{ steps.content.outputs.revision }} \
+            -PbuildVersionCode=${{ steps.content.outputs.build_code }}
+          mkdir -p dist
+          cp client/build/outputs/apk/debug/client-debug.apk dist/Lineup-Client-debug.apk
+          printf 'signed=false\nrevision=%s\nversionCode=%s\n' \
+            '${{ steps.content.outputs.revision }}' '${{ steps.content.outputs.build_code }}' > dist/build-info.txt
+
+      - name: Upload user APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lineup-user-apk
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish downloadable APK release
+        if: ${{ steps.signing.outputs.signed == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lineup-r${{ steps.content.outputs.revision }}-b${{ github.run_number }}
+          name: Lineup user app — database revision ${{ steps.content.outputs.revision }}
+          body: |
+            Automatically generated Lineup user app.
+            Embedded database revision: ${{ steps.content.outputs.revision }}
+            Install this APK to view the published offline blocks.
+          files: dist/Lineup-Client.apk
+          make_latest: true
