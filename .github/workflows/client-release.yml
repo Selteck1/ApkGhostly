@@ -4,11 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'content/catalog.json'
-      - 'content/policy.json'
-      - 'content/packs/community.lineup'
+      # App source changes need a new APK; content changes do not.
       - 'client/**'
       - 'scripts/prepare_client_assets.py'
+      - '.github/workflows/client-release.yml'
   workflow_dispatch:
 
 permissions:
