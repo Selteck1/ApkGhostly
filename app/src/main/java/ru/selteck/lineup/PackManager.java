@@ -50,6 +50,60 @@ public final class PackManager {
             zip.finish();
         }
     }
+
+    public static byte[] exportToBytes(Context context, AppDb db) throws Exception {
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        JSONObject manifest = new JSONObject();
+        manifest.put("format", "lineup");
+        manifest.put("schemaVersion", 1);
+        manifest.put("packId", "community");
+        manifest.put("version", System.currentTimeMillis() / 1000L);
+        manifest.put("title", "Lineup — база раскидок");
+        JSONArray blocks = new JSONArray();
+        Map<String, File> files = new HashMap<>();
+        int index = 0;
+        for (Block b : db.list("")) {
+            JSONObject item = new JSONObject();
+            item.put("id", b.contentId);
+            item.put("title", b.title);
+            item.put("map", b.map);
+            item.put("category", b.category);
+            item.put("side", b.side);
+            item.put("description", b.description);
+            JSONArray photos = new JSONArray();
+            for (String path : b.photos) {
+                File image = new File(path);
+                if (!image.isFile()) continue;
+                String safe = b.contentId.replaceAll("[^A-Za-z0-9_-]", "_");
+                String name = "images/" + safe + "_" + (index++) + extension(image.getName());
+                JSONObject photo = new JSONObject();
+                photo.put("file", name);
+                photos.put(photo);
+                files.put(name, image);
+            }
+            item.put("photos", photos);
+            blocks.put(item);
+        }
+        if (blocks.length() == 0) throw new IllegalStateException("Сначала создай хотя бы один блок.");
+        manifest.put("blocks", blocks);
+        try (ZipOutputStream zip = new ZipOutputStream(raw, StandardCharsets.UTF_8)) {
+            zip.putNextEntry(new ZipEntry("manifest.json"));
+            zip.write(manifest.toString(2).getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            byte[] buffer = new byte[32768];
+            for (Map.Entry<String, File> entry : files.entrySet()) {
+                zip.putNextEntry(new ZipEntry(entry.getKey()));
+                try (InputStream input = new java.io.FileInputStream(entry.getValue())) {
+                    int read;
+                    while ((read = input.read(buffer)) != -1) zip.write(buffer, 0, read);
+                }
+                zip.closeEntry();
+            }
+            zip.finish();
+        }
+        return raw.toByteArray();
+    }
+
     private static String extension(String name){String lower=name.toLowerCase(java.util.Locale.ROOT);if(lower.endsWith(".png"))return ".png";if(lower.endsWith(".webp"))return ".webp";return ".jpg";}
     public static int importFromUri(Context context,AppDb db,Uri uri)throws Exception{
         InputStream in=context.getContentResolver().openInputStream(uri);if(in==null)throw new IllegalStateException("Не удалось прочитать пакет");
