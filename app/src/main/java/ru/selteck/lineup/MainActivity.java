@@ -30,6 +30,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -46,6 +47,7 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
     private static final int PICK_PHOTOS=201,PICK_IMPORT=202,PICK_EXPORT=203;
     private static final String CATALOG_URL="https://raw.githubusercontent.com/Selteck1/ApkGhostly/main/content/catalog.json";
+    private static final String PUBLISH_API_BASE="https://lineup-content-publisher.onrender.com";
     private static final int BG=Color.rgb(10,14,27),SURFACE=Color.rgb(21,28,47),SURFACE2=Color.rgb(29,38,61);
     private static final int FG=Color.rgb(241,244,255),MUTED=Color.rgb(158,170,197),PURPLE=Color.rgb(167,139,250),MINT=Color.rgb(77,226,197);
     private AppDb db;private SharedPreferences prefs;private LinearLayout root,page;private ScrollView scroll;private boolean adminSession=false;
@@ -81,7 +83,7 @@ public class MainActivity extends Activity {
     private EditText field(String hint,String value,boolean multi){EditText e=new EditText(this);e.setSingleLine(!multi);e.setHint(hint);e.setText(value==null?"":value);e.setTextColor(FG);e.setHintTextColor(MUTED);e.setTextSize(15);e.setPadding(dp(13),dp(12),dp(13),dp(12));e.setBackground(shape(SURFACE2,Color.rgb(55,66,97),13));
         if(multi){e.setGravity(Gravity.TOP|Gravity.START);e.setMinLines(4);e.setMaxLines(12);e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);}else e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         LinearLayout.LayoutParams p=lp(-1,multi?124:50);p.bottomMargin=dp(10);page.addView(e,p);return e;}
-    private void showHome(){adminSession=false;shell("LINEUP","ОФЛАЙН-СПРАВОЧНИК STANDOFF 2",false,null);addText("Тактики под рукой.",27,FG,true,2,5);addText("Сохрани раскидки заранее — смотри фото и инструкции даже без интернета.",14,MUTED,false,0,18);
+    private void showHome(){if(!databaseUnlocked){showUpdateGate("Сначала нужно проверить и обновить общую базу.",null);return;}adminSession=false;shell("LINEUP","ОФЛАЙН-СПРАВОЧНИК STANDOFF 2",false,null);addText("Тактики под рукой.",27,FG,true,2,5);addText("Сохрани раскидки заранее — смотри фото и инструкции даже без интернета.",14,MUTED,false,0,18);
         int count=db.list("").size();LinearLayout stats=row();stats.setPadding(dp(14),dp(13),dp(14),dp(13));stats.setBackground(shape(Color.rgb(18,33,50),Color.rgb(39,70,80),16));LinearLayout left=column();left.addView(text(String.valueOf(count),24,MINT,true));left.addView(text("блоков на устройстве",12,MUTED,false));stats.addView(left,new LinearLayout.LayoutParams(0,-2,1));TextView off=text("● ОФЛАЙН",11,MINT,true);off.setGravity(Gravity.CENTER);stats.addView(off);page.addView(stats,lp(-1,-2));gap(16);
         addButton("📚  Открыть все блоки",()->showList(""),true);addButton("⬇  Проверить обновления",this::checkUpdates,false);addButton("＋  Импортировать пакет с устройства",this::pickImport,false);addButton("⚙  Администратор",this::openAdmin,false);
         addText("Недавно добавленные",17,FG,true,15,10);List<Block> latest=db.list("");if(latest.isEmpty())addCard(text("Здесь появятся твои раскидки. Открой режим администратора и создай первый блок.",14,MUTED,false));else for(int i=0;i<Math.min(4,latest.size());i++)addBlockCard(latest.get(i));
@@ -102,7 +104,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(saved.isEmpty()?"Регистрация администратора":"Вход администратора").setView(box).setNegativeButton("Отмена",null).setPositiveButton(saved.isEmpty()?"Создать PIN":"Войти",(d,w)->{String value=pin.getText().toString().trim();if(saved.isEmpty()){if(value.length()<6){Toast.makeText(this,"PIN должен содержать минимум 6 цифр",Toast.LENGTH_LONG).show();return;}prefs.edit().putString("admin_pin_hash",hashPin(value)).apply();adminSession=true;showAdminMenu();}else if(hashPin(value).equals(saved)){adminSession=true;showAdminMenu();}else Toast.makeText(this,"Неверный PIN",Toast.LENGTH_SHORT).show();}).show();}
     private String hashPin(String value){try{byte[] bytes=MessageDigest.getInstance("SHA-256").digest((getPackageName()+":lineup:"+value).getBytes(StandardCharsets.UTF_8));StringBuilder s=new StringBuilder();for(byte b:bytes)s.append(String.format(Locale.ROOT,"%02x",b&255));return s.toString();}catch(Exception e){return value;}}
     private void showAdminMenu(){shell("Администратор","УПРАВЛЕНИЕ ЛОКАЛЬНЫМИ МАТЕРИАЛАМИ",true,this::showHome);addText("Редактор контента",20,FG,true,2,6);addText("Создавай материалы на телефоне. Чтобы поделиться ими со всеми, экспортируй пакет и загрузи его в репозиторий контента.",13,MUTED,false,0,18);
-        addButton("＋  Создать блок",()->startEditor(null),true);addButton("✎  Изменить существующий блок",()->showList(""),false);addButton("⇧  Экспортировать пакет .lineup",this::pickExport,false);addButton("⇩  Импортировать пакет .lineup",this::pickImport,false);addButton("Выйти из режима администратора",()->{adminSession=false;showHome();},false);}
+        addButton("＋  Создать блок",()->startEditor(null),true);addButton("✎  Изменить существующий блок",()->showList(""),false);addButton("🌐  Опубликовать базу для всех устройств",this::publishDatabase,true);addButton("⇧  Экспортировать пакет .lineup",this::pickExport,false);addButton("⇩  Импортировать пакет .lineup",this::pickImport,false);addButton("Выйти из режима администратора",()->{adminSession=false;showHome();},false);}
     private void startEditor(Block existing){draft=existing==null?new Block():existing.copy();draftPhotos=new ArrayList<>(existing==null?new ArrayList<>():existing.photos);showEditor();}
     private void showEditor(){shell(draft.rowId==0?"Новый блок":"Редактирование","НАЗВАНИЕ, КАРТА, ОПИСАНИЕ И ФОТО",true,()->{if(draft.rowId>0)showDetail(draft.rowId);else showAdminMenu();});
         addText("Название блока *",12,MUTED,true,0,5);edTitle=field("Например: Смок на мид",draft.title,false);addText("Карта",12,MUTED,true,0,5);edMap=field("Название карты",draft.map,false);
@@ -133,7 +135,98 @@ public class MainActivity extends Activity {
         addCard(text(message,14,error==null?MINT:Color.rgb(255,130,150),true));
         if(error!=null)addText(error,13,Color.rgb(255,160,170),false,4,12);
         addButton(checkingUpdates?"Проверка выполняется…":"Проверить и обновить базу",()->checkUpdates(true),true);
+        addButton("Я администратор — добавить/опубликовать блоки",this::openAdmin,false);
         addText("Для проверки и скачивания нужна сеть. Если сервер опубликовал новую версию, открыть материалы до её загрузки нельзя.",11,MUTED,false,12,0);
+    }
+
+
+    private void publishDatabase(){
+        if(!adminSession){Toast.makeText(this,"Сначала войди как администратор",Toast.LENGTH_SHORT).show();return;}
+        EditText key=new EditText(this);
+        key.setSingleLine(true);
+        key.setHint("Ключ публикации Lineup");
+        key.setText(prefs.getString("publisher_key",""));
+        key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        key.setTextColor(FG);
+        key.setHintTextColor(MUTED);
+        key.setPadding(dp(12),dp(10),dp(12),dp(10));
+        key.setBackground(shape(SURFACE2,PURPLE,12));
+        LinearLayout box=column();
+        box.setPadding(dp(4),dp(8),dp(4),dp(3));
+        box.addView(text("Пакет со всеми блоками и фотографиями будет загружен на сервер, а GitHub автоматически опубликует новую обязательную ревизию для всех устройств.",13,MUTED,false));
+        box.addView(new View(this),lp(1,12));
+        box.addView(key,lp(-1,50));
+        new AlertDialog.Builder(this).setTitle("Опубликовать общую базу")
+            .setView(box).setNegativeButton("Отмена",null)
+            .setPositiveButton("Опубликовать",(dialog,which)->{
+                String secret=key.getText().toString().trim();
+                if(secret.isEmpty()){
+                    Toast.makeText(this,"Введи ключ публикации",Toast.LENGTH_LONG).show();
+                    return;
+                }
+                sendPublishedDatabase(secret);
+            }).show();
+    }
+
+    private void sendPublishedDatabase(String secret){
+        if(checkingUpdates){Toast.makeText(this,"Дождись завершения синхронизации",Toast.LENGTH_SHORT).show();return;}
+        Toast.makeText(this,"Подготавливаю пакет и отправляю базу…",Toast.LENGTH_SHORT).show();
+        worker.execute(()->{
+            String error=null;
+            int blockCount=0;
+            String commit="";
+            try{
+                List<Block> localBlocks=db.list("");
+                blockCount=localBlocks.size();
+                byte[] packageBytes=PackManager.exportToBytes(this,db);
+                java.net.HttpURLConnection connection=(java.net.HttpURLConnection)new URL(PUBLISH_API_BASE+"/publish").openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(60000);
+                connection.setDoOutput(true);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Cache-Control","no-cache");
+                connection.setRequestProperty("Content-Type","application/octet-stream");
+                connection.setRequestProperty("X-Lineup-Admin-Key",secret);
+                connection.setFixedLengthStreamingMode(packageBytes.length);
+                try{
+                    try(OutputStream out=connection.getOutputStream()){out.write(packageBytes);}
+                    int status=connection.getResponseCode();
+                    InputStream responseStream=status>=200&&status<300?connection.getInputStream():connection.getErrorStream();
+                    String responseText="";
+                    if(responseStream!=null){
+                        try(InputStream in=responseStream){
+                            responseText=new String(PackManager.readLimited(in,1024*1024),StandardCharsets.UTF_8);
+                        }
+                    }
+                    JSONObject response;
+                    try{response=new JSONObject(responseText);}catch(Exception ignored){response=new JSONObject();}
+                    if(status<200||status>=300){
+                        error=response.optString("detail", "Сервер публикации ответил HTTP "+status);
+                    }else if(!response.optBoolean("ok",false)){
+                        error=response.optString("detail","Сервер не подтвердил публикацию.");
+                    }else{
+                        commit=response.optString("commit","");
+                        prefs.edit().putString("publisher_key",secret).apply();
+                    }
+                }finally{connection.disconnect();}
+            }catch(Exception e){
+                error=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();
+            }
+            final String failure=error,commitSha=commit;
+            final int count=blockCount;
+            runOnUiThread(()->{
+                if(failure!=null){
+                    new AlertDialog.Builder(this).setTitle("База не опубликована")
+                        .setMessage(failure+"\n\nПроверь подключение и настройки сервера. Публикация не считается выполненной, пока сервер не подтвердит загрузку.")
+                        .setPositiveButton("Понятно",null).show();
+                }else{
+                    new AlertDialog.Builder(this).setTitle("База отправлена")
+                        .setMessage("Блоков в пакете: "+count+"\n\nGitHub теперь пересчитает каталог и опубликует новую обязательную версию. После завершения публикации на других устройствах нужно нажать «Проверить и обновить базу».\n\n"+(commitSha.isEmpty()?"":("Коммит: "+commitSha)))
+                        .setPositiveButton("Готово",null).show();
+                }
+            });
+        });
     }
 
     private void checkUpdates(){checkUpdates(true);}
@@ -158,6 +251,7 @@ public class MainActivity extends Activity {
 
                 JSONArray packs=catalog.optJSONArray("packs");
                 if(packs==null)packs=new JSONArray();
+                if(packs.length()==0)throw new IllegalArgumentException("Общая база ещё не опубликована. Администратор должен создать блоки и нажать «Опубликовать базу для всех устройств».");
                 Set<String> activeIds=new HashSet<>();
                 for(int i=0;i<packs.length();i++){
                     JSONObject item=packs.getJSONObject(i);
