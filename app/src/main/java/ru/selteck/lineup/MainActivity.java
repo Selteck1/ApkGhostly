@@ -233,7 +233,7 @@ public class MainActivity extends Activity {
                     }
                 }catch(Exception ex){Toast.makeText(this,"Неправильная ссылка",Toast.LENGTH_SHORT).show();return;}
                 prefs.edit().putString("telegram_url",value).apply();
-                Toast.makeText(this,"Ссылка сохранена. Опубликуется после следующего обновления через Termux.",Toast.LENGTH_LONG).show();
+                Toast.makeText(this,"Ссылка сохранена. Опубликуется после следующей отправки через Lineup-Publish.bat.",Toast.LENGTH_LONG).show();
             }).show();
     }
 
