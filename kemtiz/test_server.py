@@ -122,7 +122,7 @@ class KemtizApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["client"], "android-only")
         self.assertEqual(response.json()["app"], "Kemtiz API")
-        self.assertEqual(response.json()["api_version"], "0.3.0")
+        self.assertEqual(response.json()["api_version"], "0.4.0")
         self.assertIn("username_password", response.json()["auth_methods"])
 
     def test_android_webview_origin_is_allowed_by_cors(self):
