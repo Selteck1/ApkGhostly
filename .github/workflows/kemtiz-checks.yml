@@ -31,3 +31,33 @@ jobs:
       - name: Test API flow
         working-directory: kemtiz
         run: python -m unittest -v test_server
+      - name: Verify live Render registration service
+        env:
+          KEMTIZ_API_BASE: https://kemtiz-api.onrender.com
+        run: |
+          set -euo pipefail
+          echo "Checking live Kemtiz health endpoint..."
+          health="$(curl --silent --show-error --fail --retry 5 --retry-all-errors --retry-delay 8 --max-time 45 "$KEMTIZ_API_BASE/health")"
+          echo "$health"
+          HEALTH_JSON="$health" python - <<'PY'
+          import json
+          import os
+          payload = json.loads(os.environ["HEALTH_JSON"])
+          assert payload.get("api_version") == "0.3.0", (
+              "Render is serving an old Kemtiz API; expected api_version 0.3.0. "
+              "Check the Render service Root Directory is 'kemtiz'."
+          )
+          assert payload.get("password_auth") is True, (
+              "Render backend does not report password authentication enabled."
+          )
+          PY
+          echo "Checking that the password registration endpoint exists..."
+          status="$(curl --silent --show-error --output /tmp/kemtiz-register-check.json --write-out '%{http_code}' \
+            --max-time 45 -X POST "$KEMTIZ_API_BASE/api/auth/password/register" \
+            -H 'Content-Type: application/json' \
+            --data '{"username":"x","password":"x"}')"
+          cat /tmp/kemtiz-register-check.json
+          test "$status" = "422" || {
+            echo "::error::Password registration route returned HTTP $status (expected 422 for invalid test input)."
+            exit 1
+          }
