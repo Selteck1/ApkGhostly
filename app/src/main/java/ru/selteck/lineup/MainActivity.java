@@ -2,6 +2,8 @@ package ru.selteck.lineup;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -45,9 +47,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private static final int PICK_PHOTOS=201,PICK_IMPORT=202,PICK_EXPORT=203;
+    private static final int PICK_PHOTOS=201,PICK_IMPORT=202,PICK_EXPORT=203,PICK_UPDATE=204;
     private static final String CATALOG_URL="https://raw.githubusercontent.com/Selteck1/ApkGhostly/main/content/catalog.json";
-    private static final String PUBLISH_API_BASE="https://lineup-content-publisher.onrender.com";
     private static final int BG=Color.rgb(10,14,27),SURFACE=Color.rgb(21,28,47),SURFACE2=Color.rgb(29,38,61);
     private static final int FG=Color.rgb(241,244,255),MUTED=Color.rgb(158,170,197),PURPLE=Color.rgb(167,139,250),MINT=Color.rgb(77,226,197);
     private AppDb db;private SharedPreferences prefs;private LinearLayout root,page;private ScrollView scroll;private boolean adminSession=false;
@@ -130,16 +131,15 @@ public class MainActivity extends Activity {
     private void showAdminMenu(){
         shell("Администратор","РЕДАКТОР И СБОРКА БАЗЫ",true,this::showAdminLogin);
         addText("Твоя база раскидок",24,FG,true,3,6);
-        addText("Блоки и фотографии сначала сохраняются локально. Кнопка сборки отправляет базу и запускает сборку отдельного APK для игроков.",14,MUTED,false,0,16);
+        addText("Блоки и фотографии сохраняются на устройстве. Для публикации приложение экспортирует пакет и даёт готовые команды Termux. После отправки в GitHub блоки обновятся у игроков без сборки нового APK.",14,MUTED,false,0,16);
         LinearLayout stats=row();stats.setPadding(dp(14),dp(13),dp(14),dp(13));stats.setBackground(shape(Color.rgb(18,33,50),Color.rgb(39,70,80),16));
         LinearLayout left=column();left.addView(text(String.valueOf(db.list("").size()),24,MINT,true));left.addView(text("сохранённых блоков",12,MUTED,false));
         stats.addView(left,new LinearLayout.LayoutParams(0,-2,1));TextView offline=text("● ЛОКАЛЬНО",11,MINT,true);offline.setGravity(Gravity.CENTER);stats.addView(offline);page.addView(stats,lp(-1,-2));gap(16);
         addButton("＋  Добавить блок",()->startEditor(null),true);
         addButton("✎  Все блоки / редактировать",()->showList(""),false);
-        addButton("⚒  Собрать новое APK для игроков",this::publishDatabase,true);
-        addButton("🔒  Заблокировать прошлые версии",this::lockPreviousVersion,false);
+        addButton("⬆  Обновить блоки без сборки APK",this::prepareContentUpdate,true);
         addButton("✈  Изменить ссылку Telegram",this::changeTelegramLink,false);
-        addButton("⬇  Скачать собранное приложение",this::openBuildPage,false);
+        addButton("🔒  Почему нельзя отключить старые APK",this::lockPreviousVersion,false);
         addButton("Экспортировать резервную копию .lineup",this::pickExport,false);
         addButton("Выйти из администратора",()->{adminSession=false;sessionAdminPassword="";showAdminLogin();},false);
     }
@@ -161,7 +161,8 @@ public class MainActivity extends Activity {
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(result!=RESULT_OK||data==null||(data.getData()==null&&data.getClipData()==null))return;try{
         if(req==PICK_PHOTOS){captureDraft();ArrayList<Uri> selected=new ArrayList<>();if(data.getClipData()!=null){for(int i=0;i<data.getClipData().getItemCount();i++)selected.add(data.getClipData().getItemAt(i).getUri());}else selected.add(data.getData());int count=0;for(Uri uri:selected){if(draftPhotos.size()>=12)break;String path=copyPhoto(uri);if(path!=null){draftPhotos.add(path);count++;}}Toast.makeText(this,"Добавлено фото: "+count,Toast.LENGTH_SHORT).show();showEditor();}
         else if(req==PICK_IMPORT){int n=PackManager.importFromUri(this,db,data.getData());Toast.makeText(this,"Импортировано блоков: "+n,Toast.LENGTH_LONG).show();if(adminSession)showAdminMenu();else showHome();}
-        else if(req==PICK_EXPORT){PackManager.exportToUri(this,db,data.getData());Toast.makeText(this,"Пакет сохранён. Загрузи его в content/packs/community.lineup в GitHub.",Toast.LENGTH_LONG).show();showAdminMenu();}
+        else if(req==PICK_EXPORT){PackManager.exportToUri(this,db,data.getData());Toast.makeText(this,"Резервная копия .lineup сохранена",Toast.LENGTH_LONG).show();showAdminMenu();}
+         else if(req==PICK_UPDATE){PackManager.exportToUri(this,db,data.getData());showTermuxCommands();}
     }catch(Exception e){Toast.makeText(this,"Ошибка: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage()),Toast.LENGTH_LONG).show();if(req==PICK_PHOTOS)showEditor();}}
     private String copyPhoto(Uri uri){InputStream in=null;try{File dir=new File(getFilesDir(),"lineup_images");if(!dir.exists()&&!dir.mkdirs())return null;String mime=getContentResolver().getType(uri);String ext=mime!=null&&mime.toLowerCase(Locale.ROOT).contains("png")?".png":mime!=null&&mime.toLowerCase(Locale.ROOT).contains("webp")?".webp":".jpg";File target=new File(dir,java.util.UUID.randomUUID().toString()+ext);in=getContentResolver().openInputStream(uri);if(in==null)return null;
         try(FileOutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[32768];int total=0,read;while((read=in.read(buffer))!=-1){total+=read;if(total>20*1024*1024){target.delete();throw new IllegalArgumentException("Фото не должно превышать 20 МБ");}out.write(buffer,0,read);}}return target.getAbsolutePath();
@@ -179,115 +180,52 @@ public class MainActivity extends Activity {
     }
 
 
-    private void publishDatabase(){
-        if(!adminSession||sessionAdminPassword.isEmpty()){showAdminLogin();return;}
-        List<Block> blocks=db.list("");
-        if(blocks.isEmpty()){
-            new AlertDialog.Builder(this).setTitle("Нет блоков")
-                .setMessage("Сначала добавь хотя бы один блок, заполни описание и сохрани его.")
-                .setPositiveButton("Понятно",null).show();return;
-        }
-        new AlertDialog.Builder(this).setTitle("Собрать новое APK?")
-            .setMessage("Будут опубликованы "+blocks.size()+" блоков с фотографиями. GitHub Actions соберёт отдельное приложение для игроков с этой базой.")
+    private void prepareContentUpdate(){
+        if(!adminSession){showAdminLogin();return;}
+        Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE,"community.lineup");
+        new AlertDialog.Builder(this).setTitle("Подготовить обновление без сборки APK")
+            .setMessage("Сохрани community.lineup в папку «Download / Загрузки». Затем приложение покажет команды для Termux: они отправят базу в твой GitHub, а APK игроков загрузит новые блоки автоматически.")
             .setNegativeButton("Отмена",null)
-            .setPositiveButton("Собрать",(dialog,which)->sendPublishedDatabase(sessionAdminPassword)).show();
+            .setPositiveButton("Экспортировать пакет",(d,w)->startActivityForResult(intent,PICK_UPDATE)).show();
     }
 
-    private void sendPublishedDatabase(String secret){
-        if(checkingUpdates){Toast.makeText(this,"Дождись завершения синхронизации",Toast.LENGTH_SHORT).show();return;}
-        Toast.makeText(this,"Подготавливаю пакет и отправляю базу…",Toast.LENGTH_SHORT).show();
-        worker.execute(()->{
-            String error=null;
-            int blockCount=0;
-            String commit="";
-            try{
-                List<Block> localBlocks=db.list("");
-                blockCount=localBlocks.size();
-                byte[] packageBytes=PackManager.exportToBytes(this,db);
-                java.net.HttpURLConnection connection=(java.net.HttpURLConnection)new URL(PUBLISH_API_BASE+"/publish").openConnection();
-                connection.setRequestMethod("POST");
-                connection.setConnectTimeout(15000);
-                connection.setReadTimeout(60000);
-                connection.setDoOutput(true);
-                connection.setUseCaches(false);
-                connection.setRequestProperty("Cache-Control","no-cache");
-                connection.setRequestProperty("Content-Type","application/octet-stream");
-                connection.setRequestProperty("X-Lineup-Admin-Key",secret);
-                connection.setFixedLengthStreamingMode(packageBytes.length);
-                try{
-                    try(OutputStream out=connection.getOutputStream()){out.write(packageBytes);}
-                    int status=connection.getResponseCode();
-                    InputStream responseStream=status>=200&&status<300?connection.getInputStream():connection.getErrorStream();
-                    String responseText="";
-                    if(responseStream!=null){
-                        try(InputStream in=responseStream){
-                            responseText=new String(PackManager.readLimited(in,1024*1024),StandardCharsets.UTF_8);
-                        }
-                    }
-                    JSONObject response;
-                    try{response=new JSONObject(responseText);}catch(Exception ignored){response=new JSONObject();}
-                    if(status<200||status>=300){
-                        error=response.optString("detail", "Сервер публикации ответил HTTP "+status);
-                    }else if(!response.optBoolean("ok",false)){
-                        error=response.optString("detail","Сервер не подтвердил публикацию.");
-                    }else{
-                        commit=response.optString("commit","");
-                        prefs.edit().putString("publisher_key_saved","true").apply();
-                    }
-                }finally{connection.disconnect();}
-            }catch(Exception e){
-                error=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();
-            }
-            final String failure=error,commitSha=commit;
-            final int count=blockCount;
-            runOnUiThread(()->{
-                if(failure!=null){
-                    new AlertDialog.Builder(this).setTitle("База не опубликована")
-                        .setMessage(failure+"\n\nПроверь подключение и настройки сервера. Публикация не считается выполненной, пока сервер не подтвердит загрузку.")
-                        .setPositiveButton("Понятно",null).show();
-                }else{
-                    new AlertDialog.Builder(this).setTitle("База отправлена")
-                        .setMessage("Блоков в пакете: "+count+"\n\nGitHub теперь пересчитает каталог и опубликует новую обязательную версию. После завершения публикации на других устройствах нужно нажать «Проверить и обновить базу».\n\n"+(commitSha.isEmpty()?"":("Коммит: "+commitSha)))
-                        .setPositiveButton("Готово",null).show();
-                }
-            });
-        });
+    private void showTermuxCommands(){
+        String telegramJson=JSONObject.quote(prefs.getString("telegram_url","https://t.me/"));
+        String policyCommand="python -c 'import json,pathlib; p=pathlib.Path(\"content/policy.json\"); d=json.loads(p.read_text(encoding=\"utf-8\")); d[\"telegramUrl\"]="+telegramJson+"; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+\"\\n\",encoding=\"utf-8\")'";
+        String updateCommands="cd ~/ApkGhostly\n"
+            +"git pull --rebase origin main\n"
+            +"cp ~/storage/shared/Download/community.lineup content/packs/community.lineup\n"
+            +"python scripts/build_catalog.py\n"
+            +policyCommand+"\n"
+            +"git add content/packs/community.lineup content/catalog.json content/policy.json\n"
+            +"git commit -m \"Update Lineup content\" || echo \"Нет изменений для коммита\"\n"
+            +"git push origin main";
+        String setupCommands="pkg update -y\npkg install git python gh -y\ntermux-setup-storage\ngh auth login\ngh auth setup-git\ngit clone https://github.com/Selteck1/ApkGhostly.git ~/ApkGhostly";
+        new AlertDialog.Builder(this).setTitle("Команды обновления для Termux")
+            .setMessage("1. Если ещё не настраивал Termux, один раз выполни первоначальную настройку.\n2. Файл community.lineup должен лежать в Download / Загрузки.\n3. Скопируй команды обновления и вставь их в Termux.\n\nКОМАНДЫ ОБНОВЛЕНИЯ:\n\n"+updateCommands)
+            .setNeutralButton("Скопировать настройку",(d,w)->copyText("Команды настройки Termux",setupCommands))
+            .setPositiveButton("Скопировать обновление",(d,w)->copyText("Команды обновления",updateCommands))
+            .setNegativeButton("Закрыть",null).show();
     }
 
+    private void copyText(String label,String value){
+        ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if(clipboard!=null){clipboard.setPrimaryClip(ClipData.newPlainText(label,value));Toast.makeText(this,"Команды скопированы в буфер обмена",Toast.LENGTH_LONG).show();}
+    }
 
     private void lockPreviousVersion(){
-        if(!adminSession||sessionAdminPassword.isEmpty()){showAdminLogin();return;}
-        new AlertDialog.Builder(this).setTitle("Заблокировать предыдущие версии?")
-            .setMessage("Старые приложения после проверки интернета покажут экран обновления и ссылку на Telegram. Последняя собранная версия останется доступна, если её ревизия совпадает с новой политикой.")
-            .setNegativeButton("Отмена",null)
-            .setPositiveButton("Заблокировать",(d,w)->{
-                Toast.makeText(this,"Отправляю новую политику…",Toast.LENGTH_SHORT).show();
-                worker.execute(()->{
-                    String error=null,responseText="";
-                    try{
-                        java.net.HttpURLConnection connection=(java.net.HttpURLConnection)new URL(PUBLISH_API_BASE+"/policy/lock").openConnection();
-                        connection.setRequestMethod("POST");connection.setConnectTimeout(15000);connection.setReadTimeout(30000);
-                        connection.setDoOutput(true);connection.setRequestProperty("X-Lineup-Admin-Key",sessionAdminPassword);
-                        connection.setRequestProperty("Content-Type","application/json");connection.setFixedLengthStreamingMode(2);
-                        try(OutputStream out=connection.getOutputStream()){out.write("{}".getBytes(StandardCharsets.UTF_8));}
-                        int status=connection.getResponseCode();InputStream stream=status>=200&&status<300?connection.getInputStream():connection.getErrorStream();
-                        if(stream!=null)try(InputStream in=stream){responseText=new String(PackManager.readLimited(in,512*1024),StandardCharsets.UTF_8);}
-                        if(status<200||status>=300){try{error=new JSONObject(responseText).optString("detail","Сервер ответил HTTP "+status);}catch(Exception ex){error="Сервер ответил HTTP "+status;}}
-                    }catch(Exception ex){error=ex.getMessage()==null?ex.getClass().getSimpleName():ex.getMessage();}
-                    final String failure=error,body=responseText;
-                    runOnUiThread(()->{
-                        if(failure!=null)new AlertDialog.Builder(this).setTitle("Не удалось заблокировать версии").setMessage(failure+"\n\nПроверь, что сервер настроен и LINEUP_GITHUB_TOKEN добавлен в Render.").setPositiveButton("Понятно",null).show();
-                        else {String revision="";try{revision="Минимальная ревизия: "+new JSONObject(body).optLong("minClientRevision",-1);}catch(Exception ignored){}
-                            new AlertDialog.Builder(this).setTitle("Политика обновления опубликована").setMessage(revision+"\nСтарые APK будут заблокированы при следующей онлайн-проверке. GitHub Actions соберёт APK, совместимый с этой ревизией.").setPositiveButton("Готово",null).show();}
-                    });
-                });
-            }).show();
+        new AlertDialog.Builder(this).setTitle("Блокировка старых APK")
+            .setMessage("Для блокировки старых APK нужно выпустить новую версию приложения: номер версии зашит внутри APK. Обновление блоков через Termux не меняет APK и не должно отключать актуальных пользователей.\n\nНовые блоки, описания, фотографии и ссылка Telegram публикуются отдельно — без пересборки APK.")
+            .setPositiveButton("Понятно",null).show();
     }
 
     private void changeTelegramLink(){
-        if(!adminSession||sessionAdminPassword.isEmpty()){showAdminLogin();return;}
+        if(!adminSession){showAdminLogin();return;}
         EditText link=new EditText(this);link.setSingleLine(true);link.setText(prefs.getString("telegram_url","https://t.me/"));link.setHint("https://t.me/your_channel");link.setTextColor(FG);link.setHintTextColor(MUTED);link.setPadding(dp(12),dp(10),dp(12),dp(10));link.setBackground(shape(SURFACE2,PURPLE,12));
-        new AlertDialog.Builder(this).setTitle("Ссылка обновления в Telegram").setMessage("Эта ссылка будет открываться в приложении игрока, когда его версия заблокирована.")
+        new AlertDialog.Builder(this).setTitle("Ссылка обновления в Telegram").setMessage("Ссылка сохранится в настройках администратора и попадёт в content/policy.json при следующем обновлении через Termux.")
             .setView(link).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(d,w)->{
                 String value=link.getText().toString().trim();
                 try{
@@ -298,21 +236,7 @@ public class MainActivity extends Activity {
                     }
                 }catch(Exception ex){Toast.makeText(this,"Неправильная ссылка",Toast.LENGTH_SHORT).show();return;}
                 prefs.edit().putString("telegram_url",value).apply();
-                worker.execute(()->{
-                    String error=null;
-                    try{
-                        JSONObject body=new JSONObject();body.put("telegramUrl",value);
-                        byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);
-                        java.net.HttpURLConnection connection=(java.net.HttpURLConnection)new URL(PUBLISH_API_BASE+"/policy/telegram").openConnection();
-                        connection.setRequestMethod("POST");connection.setConnectTimeout(15000);connection.setReadTimeout(30000);connection.setDoOutput(true);
-                        connection.setRequestProperty("X-Lineup-Admin-Key",sessionAdminPassword);connection.setRequestProperty("Content-Type","application/json");connection.setFixedLengthStreamingMode(bytes.length);
-                        try(OutputStream out=connection.getOutputStream()){out.write(bytes);}
-                        int status=connection.getResponseCode();if(status<200||status>=300){InputStream stream=connection.getErrorStream();String msg="HTTP "+status;if(stream!=null)try(InputStream in=stream){msg=new String(PackManager.readLimited(in,512*1024),StandardCharsets.UTF_8);}error=msg;}
-                        connection.disconnect();
-                    }catch(Exception ex){error=ex.getMessage()==null?ex.getClass().getSimpleName():ex.getMessage();}
-                    final String failure=error;
-                    runOnUiThread(()->Toast.makeText(this,failure==null?"Ссылка сохранена на сервере":"Ссылка сохранена локально, но сервер не обновлён: "+failure,Toast.LENGTH_LONG).show());
-                });
+                Toast.makeText(this,"Ссылка сохранена. Опубликуется после следующего обновления через Termux.",Toast.LENGTH_LONG).show();
             }).show();
     }
 
