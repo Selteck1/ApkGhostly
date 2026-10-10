@@ -35,29 +35,39 @@ jobs:
         env:
           KEMTIZ_API_BASE: https://kemtiz-api.onrender.com
         run: |
-          set -euo pipefail
+          set -uo pipefail
           echo "Checking live Kemtiz health endpoint..."
-          health="$(curl --silent --show-error --fail --retry 5 --retry-all-errors --retry-delay 8 --max-time 45 "$KEMTIZ_API_BASE/health")"
-          echo "$health"
-          HEALTH_JSON="$health" python - <<'PY'
-          import json
-          import os
-          payload = json.loads(os.environ["HEALTH_JSON"])
-          assert payload.get("api_version") == "0.3.0", (
-              "Render is serving an old Kemtiz API; expected api_version 0.3.0. "
-              "Check the Render service Root Directory is 'kemtiz'."
-          )
-          assert payload.get("password_auth") is True, (
-              "Render backend does not report password authentication enabled."
-          )
-          PY
-          echo "Checking that the password registration endpoint exists..."
+          health="$(curl --silent --show-error --retry 5 --retry-all-errors --retry-delay 8 --max-time 45 "$KEMTIZ_API_BASE/health" || true)"
+          echo "Live /health response: $health"
+
+          echo "Checking live password registration route..."
           status="$(curl --silent --show-error --output /tmp/kemtiz-register-check.json --write-out '%{http_code}' \
             --max-time 45 -X POST "$KEMTIZ_API_BASE/api/auth/password/register" \
             -H 'Content-Type: application/json' \
-            --data '{"username":"x","password":"x"}')"
-          cat /tmp/kemtiz-register-check.json
-          test "$status" = "422" || {
-            echo "::error::Password registration route returned HTTP $status (expected 422 for invalid test input)."
-            exit 1
-          }
+            --data '{"username":"x","password":"x"}' || true)"
+          echo "Registration endpoint HTTP status: $status"
+          cat /tmp/kemtiz-register-check.json 2>/dev/null || true
+
+          HEALTH_JSON="$health" STATUS="$status" python - <<'PY'
+          import json
+          import os
+          payload = json.loads(os.environ.get("HEALTH_JSON", "{}") or "{}")
+          status = os.environ.get("STATUS", "")
+          errors = []
+          if payload.get("api_version") != "0.3.0":
+              errors.append(
+                  "Render is serving an old backend: expected api_version 0.3.0. "
+                  "Set the existing Render service Root Directory to 'kemtiz' "
+                  "and deploy the latest main commit."
+              )
+          if payload.get("password_auth") is not True:
+              errors.append("Live /health does not report password_auth=true.")
+          if status != "422":
+              errors.append(
+                  "Password registration route did not validate test input with HTTP 422; "
+                  f"actual status was {status or 'no response'}. The live backend is not the expected build."
+              )
+          if errors:
+              raise SystemExit("\\n".join(errors))
+          print("Live Render registration route verified.")
+          PY
