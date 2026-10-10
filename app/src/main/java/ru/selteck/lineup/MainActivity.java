@@ -141,6 +141,7 @@ public class MainActivity extends Activity {
         addButton("✈  Изменить ссылку Telegram",this::changeTelegramLink,false);
         addButton("🔒  Почему нельзя отключить старые APK",this::lockPreviousVersion,false);
         addButton("Экспортировать резервную копию .lineup",this::pickExport,false);
+        addButton("Импортировать резервную копию .lineup",this::pickImport,false);
         addButton("Выйти из администратора",()->{adminSession=false;sessionAdminPassword="";showAdminLogin();},false);
     }
 
