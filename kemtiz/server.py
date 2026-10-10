@@ -9,6 +9,8 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
+import logging
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -20,6 +22,7 @@ import httpx
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token as google_id_token
+from google.oauth2 import service_account
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -28,6 +31,11 @@ DATA_DIR = Path(os.environ.get("KEMTIZ_DATA_DIR", str(ROOT / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = Path(os.environ.get("KEMTIZ_DB_PATH", str(DATA_DIR / "kemtiz.sqlite3")))
 SECRET_PATH = DATA_DIR / ".token_secret"
+LOGGER = logging.getLogger("kemtiz.push")
+FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
+_FCM_LOCK = threading.Lock()
+_FCM_CREDENTIALS = None
+_FCM_CREDENTIALS_PATH = None
 
 
 def utc_now() -> str:
@@ -154,6 +162,14 @@ def init_db() -> None:
           window_started_at INTEGER NOT NULL,
           send_count INTEGER NOT NULL DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS push_tokens(
+          token TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          platform TEXT NOT NULL DEFAULT 'android',
+          created_at TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
         """)
         user_columns = {row["name"] for row in c.execute("PRAGMA table_info(users)").fetchall()}
         migrations = {
@@ -284,6 +300,11 @@ class ReadIn(BaseModel):
     last_read_message_id: int = Field(ge=0)
 
 
+class FcmTokenIn(BaseModel):
+    token: str = Field(min_length=20, max_length=4096)
+    platform: str = Field(default="android", max_length=24)
+
+
 class LiveConnections:
     def __init__(self):
         self.by_user: dict[int, set[WebSocket]] = {}
@@ -383,6 +404,148 @@ def home():
 
 
 
+def firebase_client_config() -> dict[str, str] | None:
+    """Return public Android client settings; never expose the service-account key."""
+    path = DATA_DIR / "google-services.json"
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        project = raw.get("project_info") or {}
+        android_client = None
+        for client in raw.get("client") or []:
+            info = client.get("client_info") or {}
+            android = info.get("android_client_info") or {}
+            if android.get("package_name") == "com.kemtiz.app":
+                android_client = client
+                break
+        if android_client is None:
+            LOGGER.warning("google-services.json has no Android client for com.kemtiz.app.")
+            return None
+        client_info = android_client.get("client_info") or {}
+        keys = android_client.get("api_key") or []
+        api_key = str(keys[0].get("current_key") or "") if keys else ""
+        result = {
+            "api_key": api_key,
+            "app_id": str(client_info.get("mobilesdk_app_id") or ""),
+            "project_id": str(project.get("project_id") or ""),
+            "sender_id": str(project.get("project_number") or ""),
+        }
+        return result if all(result.values()) else None
+    except Exception as exc:
+        LOGGER.warning("Cannot read Firebase client config: %s", type(exc).__name__)
+        return None
+
+
+def firebase_service_account_path() -> Path:
+    configured = os.environ.get("KEMTIZ_FCM_SERVICE_ACCOUNT", "").strip()
+    return Path(configured) if configured else DATA_DIR / "firebase-service-account.json"
+
+
+def fcm_access_token() -> tuple[str, str] | None:
+    """Return a cached Google OAuth token and project ID; private key stays on the PC."""
+    global _FCM_CREDENTIALS, _FCM_CREDENTIALS_PATH
+    path = firebase_service_account_path()
+    if not path.is_file():
+        return None
+    with _FCM_LOCK:
+        try:
+            if _FCM_CREDENTIALS is None or _FCM_CREDENTIALS_PATH != path:
+                _FCM_CREDENTIALS = service_account.Credentials.from_service_account_file(
+                    str(path), scopes=[FCM_SCOPE])
+                _FCM_CREDENTIALS_PATH = path
+            if not _FCM_CREDENTIALS.valid:
+                _FCM_CREDENTIALS.refresh(GoogleRequest())
+            project_id = getattr(_FCM_CREDENTIALS, "project_id", None)
+            if not _FCM_CREDENTIALS.token or not project_id:
+                return None
+            return _FCM_CREDENTIALS.token, project_id
+        except Exception as exc:
+            LOGGER.warning("Firebase Cloud Messaging credentials are not ready: %s", type(exc).__name__)
+            return None
+
+
+def _send_fcm_to_user_sync(user_id: int, title: str, body: str, data: dict[str, str]) -> None:
+    with db() as conn:
+        tokens = [str(row["token"]) for row in conn.execute(
+            "SELECT token FROM push_tokens WHERE user_id=?", (user_id,)).fetchall()]
+    if not tokens:
+        return
+    auth = fcm_access_token()
+    if auth is None:
+        return
+    access_token, project_id = auth
+    with httpx.Client(timeout=8.0) as client:
+        for device_token in tokens:
+            payload_data = {str(k): str(v) for k, v in data.items() if v is not None}
+            payload_data["title"] = title[:120]
+            payload_data["body"] = body[:500]
+            payload = {"message": {
+                "token": device_token,
+                "data": payload_data,
+                "android": {"priority": "HIGH", "ttl": "86400s"},
+            }}
+            try:
+                response = client.post(
+                    f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    json=payload,
+                )
+                if response.is_success:
+                    continue
+                if "UNREGISTERED" in response.text or "registration-token-not-registered" in response.text:
+                    with db() as conn:
+                        conn.execute("DELETE FROM push_tokens WHERE token=?", (device_token,))
+                else:
+                    LOGGER.warning("FCM delivery failed (HTTP %s).", response.status_code)
+            except Exception as exc:
+                LOGGER.warning("FCM request failed: %s", type(exc).__name__)
+
+
+async def send_push_to_user(user_id: int, title: str, body: str, data: dict[str, str]) -> None:
+    try:
+        await asyncio.to_thread(_send_fcm_to_user_sync, user_id, title, body, data)
+    except Exception as exc:
+        LOGGER.warning("FCM delivery could not be completed: %s", type(exc).__name__)
+
+
+def schedule_push(user_id: int, title: str, body: str, data: dict[str, str]) -> None:
+    asyncio.create_task(send_push_to_user(user_id, title, body, data))
+
+
+@app.get("/api/push-config")
+def public_push_config():
+    config = firebase_client_config()
+    if config is None:
+        return {"configured": False}
+    return {"configured": True, **config}
+
+
+@app.post("/api/devices/fcm-token")
+def register_fcm_token(body: FcmTokenIn, user=Depends(auth_user)):
+    token = body.token.strip()
+    if not token:
+        raise HTTPException(status_code=422, detail="FCM token is empty.")
+    now = utc_now()
+    with db() as conn:
+        conn.execute(
+            """INSERT INTO push_tokens(token,user_id,platform,created_at,last_seen_at)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(token) DO UPDATE SET user_id=excluded.user_id,
+               platform=excluded.platform,last_seen_at=excluded.last_seen_at""",
+            (token, int(user["id"]), body.platform.strip() or "android", now, now),
+        )
+    return {"ok": True}
+
+
+@app.delete("/api/devices/fcm-token")
+def unregister_fcm_token(body: FcmTokenIn, user=Depends(auth_user)):
+    with db() as conn:
+        conn.execute("DELETE FROM push_tokens WHERE token=? AND user_id=?",
+                     (body.token.strip(), int(user["id"])))
+    return {"ok": True}
+
+
 @app.get("/health")
 def health():
     with db() as c:
@@ -395,6 +558,7 @@ def health():
         "password_auth": True,
         "users": users,
         "messages": messages,
+        "push_notifications": bool(firebase_client_config()) and firebase_service_account_path().is_file(),
     }
 
 
@@ -659,6 +823,9 @@ async def request_friend(body: FriendIn, user=Depends(auth_user)):
         else:
             c.execute("INSERT INTO friend_requests(from_id,to_id,status,created_at) VALUES(?,?,'pending',?)",(uid,tid,utc_now()))
     await live.send_user(tid, {"type":"friend_request"})
+    sender_name = str(user.get("display_name") or user.get("username") or "Kemtiz")
+    schedule_push(tid, "Новая заявка в друзья", f"{sender_name} хочет добавить тебя в друзья",
+                  {"type": "friend_request"})
     return {"ok":True,"message":"Заявка отправлена."}
 
 
@@ -792,6 +959,17 @@ async def send_message(chat_id: int, body: MessageIn, user=Depends(auth_user)):
         payload = dict(row)
     await live.chat_event(chat_id,{"type":"message.new","message":payload})
     await live.chat_event(chat_id,{"type":"chat_list_changed"})
+    with db() as c:
+        recipients = [int(row["user_id"]) for row in c.execute(
+            "SELECT user_id FROM chat_members WHERE chat_id=? AND user_id!=?",
+            (chat_id, int(user["id"]))).fetchall()]
+    sender_name = str(payload.get("sender_display_name") or payload.get("sender_username") or "Kemtiz")
+    notification_body = text if len(text) <= 500 else text[:497] + "..."
+    for recipient_id in recipients:
+        schedule_push(recipient_id, sender_name, notification_body, {
+            "type": "message", "chat_id": str(chat_id),
+            "sender_id": str(user["id"]), "sender_name": sender_name,
+        })
     return payload
 
 
@@ -851,12 +1029,16 @@ async def dispatch_call_message(uid: int, data: dict[str, Any]) -> None:
                 raise HTTPException(status_code=403, detail="Пока видеозвонки доступны только в личных чатах.")
             caller = c.execute("SELECT id,username,display_name FROM users WHERE id=?", (uid,)).fetchone()
         if event_type == "call.start":
-            if target_id not in live.by_user:
-                raise HTTPException(status_code=409, detail="Собеседник сейчас не в сети Kemtiz.")
             await live.send_user(target_id, {
                 "type": "call.incoming", "chat_id": chat_id, "call_id": call_id,
                 "from_user_id": uid, "from_username": caller["username"],
                 "from_display_name": caller["display_name"], "mode": "video",
+            })
+            caller_name = str(caller["display_name"] or caller["username"])
+            schedule_push(target_id, "Входящий видеозвонок", f"{caller_name} звонит тебе", {
+                "type": "call.incoming", "chat_id": str(chat_id), "call_id": call_id,
+                "from_user_id": str(uid), "from_username": str(caller["username"]),
+                "from_display_name": caller_name,
             })
             return
         if event_type in {"call.accept", "call.reject", "call.end"}:

@@ -10,3 +10,6 @@ kemtiz/data/
 
 # Local Kemtiz PC server data
 kemtiz-data/
+
+# Firebase project client settings kept locally
+app/google-services.json
