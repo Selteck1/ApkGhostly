@@ -50,17 +50,18 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 public class KemtizActivity extends Activity {
-    private static final String DEFAULT_API = "https://kemtiz-api.onrender.com";
+    public static final String DEFAULT_API = "https://laptop-t1f8ihla.tail5fc627.ts.net";
+    private static final String LEGACY_DEFAULT_API = "https://kemtiz-api.onrender.com";
     private static final String SERVER_PREF = "server_base";
-    private static final String NOTIFICATION_CHANNEL = "kemtiz_activity";
+    private static final String NOTIFICATION_CHANNEL = KemtizPushService.MESSAGE_CHANNEL;
     private static final int CALL_NOTIFICATION_ID = 27182;
-    private static final int BG = Color.rgb(10, 11, 17);
-    private static final int SURFACE = Color.rgb(21, 22, 32);
-    private static final int PANEL = Color.rgb(31, 30, 45);
-    private static final int PURPLE = Color.rgb(112, 78, 205);
-    private static final int ACCENT = Color.rgb(171, 143, 255);
-    private static final int WHITE = Color.rgb(246, 243, 252);
-    private static final int MUTED = Color.rgb(157, 153, 176);
+    private static final int BG = Color.rgb(10, 10, 17);
+    private static final int SURFACE = Color.rgb(22, 22, 34);
+    private static final int PANEL = Color.rgb(32, 31, 48);
+    private static final int PURPLE = Color.rgb(118, 82, 219);
+    private static final int ACCENT = Color.rgb(194, 177, 255);
+    private static final int WHITE = Color.rgb(248, 246, 253);
+    private static final int MUTED = Color.rgb(164, 160, 184);
     private static final int GREEN = Color.rgb(88, 216, 161);
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
@@ -91,8 +92,15 @@ public class KemtizActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         prefs = getSharedPreferences("kemtiz", MODE_PRIVATE);
-        serverBase = normalizeServerBase(prefs.getString(SERVER_PREF, DEFAULT_API));
-        if (serverBase.isEmpty()) serverBase = DEFAULT_API;
+        String savedServer = prefs.getString(SERVER_PREF, "");
+        if (savedServer == null || savedServer.trim().isEmpty()
+                || LEGACY_DEFAULT_API.equalsIgnoreCase(savedServer.trim())) {
+            serverBase = DEFAULT_API;
+            prefs.edit().putString(SERVER_PREF, serverBase).apply();
+        } else {
+            serverBase = normalizeServerBase(savedServer);
+            if (serverBase.isEmpty()) serverBase = DEFAULT_API;
+        }
         token = prefs.getString("token", "");
         if (token.isEmpty()) { login(""); return; }
         api("GET", "/api/me", null, (data, error) -> {
@@ -103,6 +111,8 @@ public class KemtizActivity extends Activity {
                 me = (JSONObject) data;
                 shell();
                 socket();
+                configurePush();
+                handlePushIntent(getIntent());
             }
         });
     }
@@ -239,22 +249,42 @@ public class KemtizActivity extends Activity {
             else loginWithPassword();
         });
 
-        TextView footer = text("В домашней Wi-Fi-сети можно подключаться напрямую к ПК.", 11, MUTED, Gravity.CENTER);
+        TextView footer = text("Адрес сервера сохраняется на устройстве. Войди, чтобы продолжить.", 11, MUTED, Gravity.CENTER);
         content.addView(footer, topMargin(match(), 17));
 
-        TextView serverHeading = text("СВОЙ СЕРВЕР", 10, ACCENT, Gravity.START);
-        serverHeading.setTypeface(Typeface.DEFAULT_BOLD);
-        content.addView(serverHeading, topMargin(match(), 22));
-        content.addView(text(
-            "В одной Wi-Fi-сети используй IP компьютера. Для друзей из интернета запусти start_kemtiz_public.bat и вставь выданный HTTPS-адрес.",
-            11, MUTED, Gravity.START), topMargin(match(), 5));
-        serverUrlField = field("http://192.168.1.100:8000");
+        TextView serverToggle = text("⚙  Настройки сервера", 13, ACCENT, Gravity.START);
+        serverToggle.setTypeface(Typeface.DEFAULT_BOLD);
+        serverToggle.setPadding(dp(13), dp(13), dp(13), dp(13));
+        serverToggle.setBackground(bg(SURFACE, 15));
+        LinearLayout.LayoutParams serverToggleLp = match();
+        serverToggleLp.topMargin = dp(22);
+        content.addView(serverToggle, serverToggleLp);
+
+        LinearLayout serverPanel = new LinearLayout(this);
+        serverPanel.setOrientation(LinearLayout.VERTICAL);
+        serverPanel.setPadding(dp(13), dp(12), dp(13), dp(13));
+        serverPanel.setBackground(bg(SURFACE, 16));
+        serverPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams serverPanelLp = match();
+        serverPanelLp.topMargin = dp(7);
+        content.addView(serverPanel, serverPanelLp);
+        serverToggle.setOnClickListener(v -> {
+            boolean open = serverPanel.getVisibility() != View.VISIBLE;
+            serverPanel.setVisibility(open ? View.VISIBLE : View.GONE);
+            serverToggle.setText(open ? "⌄  Настройки сервера" : "⚙  Настройки сервера");
+        });
+
+        serverPanel.addView(text("АДРЕС API", 10, ACCENT, Gravity.START));
+        serverPanel.addView(text(
+                "Адрес запоминается на этом телефоне. После перезапуска компьютера или сервера вводить его заново не нужно, если адрес Tailscale не менялся.",
+                11, MUTED, Gravity.START), topMargin(match(), 5));
+        serverUrlField = field("https://laptop-t1f8ihla.tail5fc627.ts.net");
         serverUrlField.setSingleLine(true);
         serverUrlField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         serverUrlField.setText(serverBase);
-        content.addView(serverUrlField, topMargin(match(), 7));
-        Button saveServer = button("Сохранить и проверить сервер", false);
-        content.addView(saveServer, topMargin(match(), 7));
+        serverPanel.addView(serverUrlField, topMargin(match(), 9));
+        Button saveServer = button("Сохранить адрес", false);
+        serverPanel.addView(saveServer, topMargin(match(), 8));
         saveServer.setOnClickListener(v -> saveAndCheckServer());
 
         setContentView(root);
@@ -336,9 +366,11 @@ public class KemtizActivity extends Activity {
         screen = "chats";
         shell();
         socket();
+        configurePush();
     }
 
     private void clearSession() {
+        KemtizPushService.unregisterCurrentToken(this);
         token = "";
         me = null;
         prefs.edit().remove("token").apply();
@@ -848,7 +880,7 @@ public class KemtizActivity extends Activity {
             if (data instanceof JSONObject) {
                 JSONObject health = (JSONObject) data;
                 if (health.optBoolean("password_auth", false)) {
-                    toast("Сервер Kemtiz доступен. Можно регистрироваться.");
+                    toast("Сервер доступен. Адрес сохранён.");
                     if (authError != null) authError.setVisibility(View.GONE);
                 } else {
                     String version = health.optString("api_version", "неизвестна");
@@ -863,6 +895,50 @@ public class KemtizActivity extends Activity {
         });
     }
 
+    private void configurePush() {
+        if (KemtizApplication.isFirebaseConfigured(this)) {
+            KemtizPushService.registerCurrentToken(this);
+            return;
+        }
+        api("GET", "/api/push-config", null, (data, error) -> {
+            if (error == null && data instanceof JSONObject) {
+                JSONObject config = (JSONObject) data;
+                if (KemtizApplication.configureFirebase(this, config)) {
+                    KemtizPushService.registerCurrentToken(this);
+                    toast("Push-уведомления подключены.");
+                }
+            }
+        });
+    }
+
+    private void handlePushIntent(Intent intent) {
+        if (intent == null || !intent.hasExtra("open_chat_id") || token.isEmpty()) return;
+        long requestedChatId = intent.getLongExtra("open_chat_id", -1);
+        intent.removeExtra("open_chat_id");
+        if (requestedChatId <= 0) return;
+        api("GET", "/api/chats", null, (data, error) -> {
+            if (error != null || !(data instanceof JSONArray)) return;
+            JSONArray list = (JSONArray) data;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject item = list.optJSONObject(i);
+                if (item != null && item.optLong("id", -1) == requestedChatId) {
+                    currentChat = item;
+                    chatId = requestedChatId;
+                    screen = "chat";
+                    shell();
+                    return;
+                }
+            }
+            toast("Этот чат больше недоступен.");
+        });
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handlePushIntent(intent);
+    }
+
     private void socket(){
         closeSocket();if(token.isEmpty())return;
         socket=http.newWebSocket(new Request.Builder().url(websocketUrl()).build(),new WebSocketListener(){
@@ -874,7 +950,8 @@ public class KemtizActivity extends Activity {
                         if("message.new".equals(type)){
                             JSONObject m=event.optJSONObject("message");
                             if (m != null && !activityVisible && me != null
-                                    && m.optLong("sender_id", -1) != me.optLong("id", -2)) {
+                                    && m.optLong("sender_id", -1) != me.optLong("id", -2)
+                                    && !KemtizApplication.isFirebaseConfigured(KemtizActivity.this)) {
                                 showMessageNotification(m);
                             }
                             if("chat".equals(screen)&&m!=null&&m.optLong("chat_id",-1)==chatId)chat();
@@ -902,10 +979,7 @@ public class KemtizActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (manager != null) {
-                NotificationChannel channel = new NotificationChannel(
-                        NOTIFICATION_CHANNEL, "Kemtiz — сообщения и звонки", NotificationManager.IMPORTANCE_HIGH);
-                channel.setDescription("Новые сообщения и входящие видеозвонки");
-                manager.createNotificationChannel(channel);
+                KemtizPushService.ensureNotificationChannels(this);
             }
         }
     }
@@ -933,12 +1007,14 @@ public class KemtizActivity extends Activity {
         String body = message.optString("body", "Тебе отправили сообщение");
         if (body.length() > 180) body = body.substring(0, 177) + "…";
         Intent open = new Intent(this, KemtizActivity.class);
+        open.putExtra("open_chat_id", message.optLong("chat_id", -1));
         open.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pending = PendingIntent.getActivity(this,
                 4100 + (int) Math.max(0, message.optLong("chat_id", 0) % 500000), open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification notification = new Notification.Builder(this, NOTIFICATION_CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+        Notification notification = new Notification.Builder(this, KemtizPushService.MESSAGE_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(Color.rgb(229, 48, 67))
                 .setContentTitle(sender)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
@@ -946,6 +1022,8 @@ public class KemtizActivity extends Activity {
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_MESSAGE)
                 .setShowWhen(true)
+                .setNumber(getSharedPreferences("kemtiz", MODE_PRIVATE).getInt("notification_badge_count", 1))
+                .setVibrate(new long[]{0, 220, 120, 220})
                 .build();
         manager.notify(10000 + (int) Math.max(0, message.optLong("chat_id", 0) % 90000), notification);
     }
@@ -968,8 +1046,9 @@ public class KemtizActivity extends Activity {
         accept.putExtra("video", true);
         PendingIntent acceptPending = PendingIntent.getActivity(this, CALL_NOTIFICATION_ID, accept,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification notification = new Notification.Builder(this, NOTIFICATION_CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+        Notification notification = new Notification.Builder(this, KemtizPushService.CALL_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(Color.rgb(229, 48, 67))
                 .setContentTitle("Входящий видеозвонок")
                 .setContentText(callerName + " звонит тебе")
                 .setContentIntent(acceptPending)
@@ -978,6 +1057,8 @@ public class KemtizActivity extends Activity {
                 .setCategory(Notification.CATEGORY_CALL)
                 .setOngoing(false)
                 .setShowWhen(true)
+                .setNumber(1)
+                .setVibrate(new long[]{0, 450, 180, 450, 180, 450})
                 .build();
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(CALL_NOTIFICATION_ID, notification);
@@ -986,6 +1067,7 @@ public class KemtizActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         activityVisible = true;
+        KemtizPushService.clearNotifications(this);
     }
 
     @Override protected void onPause() {
@@ -1128,8 +1210,15 @@ public class KemtizActivity extends Activity {
 
     // UI helpers
     private LinearLayout card(){
-        LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.VERTICAL);v.setPadding(dp(14),dp(14),dp(14),dp(14));v.setBackground(bg(SURFACE,17));
-        LinearLayout.LayoutParams lp=match();lp.bottomMargin=dp(9);v.setLayoutParams(lp);return v;
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        v.setPadding(dp(16), dp(15), dp(16), dp(15));
+        v.setBackground(bg(SURFACE, 19));
+        if (Build.VERSION.SDK_INT >= 21) v.setElevation(dp(1));
+        LinearLayout.LayoutParams lp = match();
+        lp.bottomMargin = dp(10);
+        v.setLayoutParams(lp);
+        return v;
     }
     private void feature(LinearLayout parent,String symbol,String title,String subtitle){
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setOrientation(LinearLayout.HORIZONTAL);parent.addView(row,topMargin(match(),13));
@@ -1142,15 +1231,47 @@ public class KemtizActivity extends Activity {
         TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextColor(color);v.setGravity(gravity);v.setLineSpacing(dp(2),1.08f);return v;
     }
     private EditText field(String hint){
-        EditText v=new EditText(this);v.setTextSize(14);v.setTextColor(WHITE);v.setHintTextColor(MUTED);v.setHint(hint);v.setPadding(dp(13),dp(11),dp(13),dp(11));v.setBackground(bg(PANEL,13));return v;
+        EditText v = new EditText(this);
+        v.setTextSize(14);
+        v.setTextColor(WHITE);
+        v.setHintTextColor(MUTED);
+        v.setHint(hint);
+        v.setPadding(dp(15), dp(11), dp(15), dp(11));
+        v.setMinHeight(dp(52));
+        v.setBackground(bg(PANEL, 15));
+        v.setSelectAllOnFocus(false);
+        if (Build.VERSION.SDK_INT >= 21) v.setElevation(dp(1));
+        return v;
     }
     private Button button(String label,boolean primary){
-        Button b=new Button(this);b.setText(label);b.setTextSize(13);b.setTypeface(Typeface.DEFAULT_BOLD);b.setAllCaps(false);b.setTextColor(WHITE);b.setMinHeight(dp(47));b.setPadding(dp(10),dp(6),dp(10),dp(6));b.setBackground(bg(primary?PURPLE:PANEL,13));return b;
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextSize(13);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setAllCaps(false);
+        b.setTextColor(WHITE);
+        b.setMinHeight(dp(49));
+        b.setPadding(dp(12), dp(7), dp(12), dp(7));
+        GradientDrawable shape = bg(primary ? PURPLE : PANEL, 15);
+        android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(primary ? 0x55FFFFFF : 0x33C8B8FF),
+                shape, null);
+        b.setBackground(ripple);
+        b.setStateListAnimator(null);
+        return b;
     }
     private GradientDrawable bg(int color,int radius){
-        GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));
-        if(color==PURPLE)d.setStroke(dp(1),Color.rgb(166,137,255));
-        else if(color==SURFACE||color==PANEL)d.setStroke(dp(1),Color.rgb(41,39,57));
+        GradientDrawable d;
+        if (color == PURPLE) {
+            d = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    new int[]{Color.rgb(106, 75, 205), Color.rgb(139, 103, 233)});
+            d.setStroke(dp(1), Color.rgb(160, 133, 248));
+        } else {
+            d = new GradientDrawable();
+            d.setColor(color);
+            if (color == SURFACE || color == PANEL) d.setStroke(dp(1), Color.rgb(48, 45, 67));
+        }
+        d.setCornerRadius(dp(radius));
         return d;
     }
     private LinearLayout.LayoutParams match(){return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);}
