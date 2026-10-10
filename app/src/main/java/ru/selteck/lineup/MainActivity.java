@@ -27,6 +27,11 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.Spinner;
+import android.widget.VideoView;
+import android.widget.MediaController;
 import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -47,13 +52,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private static final int PICK_PHOTOS=201,PICK_IMPORT=202,PICK_EXPORT=203,PICK_UPDATE=204;
+    private static final int PICK_PHOTOS=201,PICK_IMPORT=202,PICK_EXPORT=203,PICK_UPDATE=204,PICK_VIDEOS=205;
     private static final String CATALOG_URL="https://raw.githubusercontent.com/Selteck1/ApkGhostly/main/content/catalog.json";
     private static final int BG=Color.rgb(10,14,27),SURFACE=Color.rgb(21,28,47),SURFACE2=Color.rgb(29,38,61);
-    private static final int FG=Color.rgb(241,244,255),MUTED=Color.rgb(158,170,197),PURPLE=Color.rgb(167,139,250),MINT=Color.rgb(77,226,197);
+    private static final int FG=Color.rgb(245,246,250),MUTED=Color.rgb(153,160,173),PURPLE=Color.rgb(255,207,48),MINT=Color.rgb(255,207,48);
     private AppDb db;private SharedPreferences prefs;private LinearLayout root,page;private ScrollView scroll;private boolean adminSession=false;
     private String sessionAdminPassword="";
-    private Block draft;private ArrayList<String> draftPhotos=new ArrayList<>();private EditText edTitle,edMap,edCategory,edSide,edDescription;
+    private Block draft;private ArrayList<String> draftPhotos=new ArrayList<>(),draftVideos=new ArrayList<>();private EditText edTitle,edDescription;private Spinner edMap,edCategory,edSide,edPlant,edGrenade;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private volatile boolean databaseUnlocked=false, checkingUpdates=false, checkingRevision=false;
     private final Handler gateHandler=new Handler(Looper.getMainLooper());
@@ -74,7 +79,7 @@ public class MainActivity extends Activity {
     private void shell(String title,String sub,boolean back,Runnable action){
         root.removeAllViews();LinearLayout header=row();header.setPadding(dp(16),dp(10),dp(16),dp(10));header.setBackgroundColor(Color.rgb(9,13,24));
         if(back){TextView b=text("‹",32,FG,false);b.setGravity(Gravity.CENTER);header.addView(b,lp(42,46));b.setOnClickListener(v->action.run());}
-        else{TextView logo=text("L",22,MINT,true);logo.setGravity(Gravity.CENTER);logo.setBackground(shape(SURFACE2,PURPLE,40));header.addView(logo,lp(42,42));}
+        else{ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);header.addView(logo,lp(42,42));}
         LinearLayout titles=column();titles.setPadding(dp(12),0,0,0);titles.addView(text(title,20,FG,true));titles.addView(text(sub,11,MUTED,false));header.addView(titles,new LinearLayout.LayoutParams(0,-2,1));root.addView(header,lp(-1,66));
         scroll=new ScrollView(this);scroll.setFillViewport(true);page=column();page.setPadding(dp(17),dp(18),dp(17),dp(22));scroll.addView(page,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
     }
@@ -85,18 +90,59 @@ public class MainActivity extends Activity {
     private EditText field(String hint,String value,boolean multi){EditText e=new EditText(this);e.setSingleLine(!multi);e.setHint(hint);e.setText(value==null?"":value);e.setTextColor(FG);e.setHintTextColor(MUTED);e.setTextSize(15);e.setPadding(dp(13),dp(12),dp(13),dp(12));e.setBackground(shape(SURFACE2,Color.rgb(55,66,97),13));
         if(multi){e.setGravity(Gravity.TOP|Gravity.START);e.setMinLines(4);e.setMaxLines(12);e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);}else e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         LinearLayout.LayoutParams p=lp(-1,multi?124:50);p.bottomMargin=dp(10);page.addView(e,p);return e;}
+    private Spinner makeDropdown(String[] values,String selected){
+        Spinner spinner=new Spinner(this);
+        ArrayAdapter<String> adapter=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,values){
+            @Override public View getView(int position,View convertView,ViewGroup parent){TextView t=(TextView)super.getView(position,convertView,parent);t.setTextColor(FG);t.setTextSize(14);t.setGravity(Gravity.CENTER_VERTICAL);t.setPadding(dp(12),dp(7),dp(12),dp(7));return t;}
+            @Override public View getDropDownView(int position,View convertView,ViewGroup parent){TextView t=(TextView)super.getDropDownView(position,convertView,parent);t.setTextColor(FG);t.setTextSize(14);t.setBackgroundColor(SURFACE2);t.setPadding(dp(14),dp(12),dp(14),dp(12));return t;}
+        };
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);spinner.setAdapter(adapter);spinner.setBackground(shape(SURFACE2,Color.rgb(50,55,67),13));
+        if(selected!=null)for(int i=0;i<values.length;i++)if(values[i].equalsIgnoreCase(selected)){spinner.setSelection(i);break;}
+        LinearLayout.LayoutParams p=lp(-1,50);p.bottomMargin=dp(10);page.addView(spinner,p);return spinner;
+    }
     private void showHome(){
         if(adminSession)showAdminMenu();else showAdminLogin();
     }
     private void showList(String query){shell("Блоки",query==null||query.isEmpty()?"ВСЯ СОХРАНЁННАЯ БАЗА":"РЕЗУЛЬТАТЫ ПОИСКА",true,this::showHome);EditText search=field("Поиск по названию, карте или описанию",query,false);addButton("Найти",()->showList(search.getText().toString().trim()),true);
         addText("Быстрые фильтры",16,FG,true,4,8);addButton("Все материалы",()->showList(""),false);addButton("Раскидки",()->showList("Раскидка"),false);addButton("Тактики",()->showList("Тактика"),false);addButton("Командные схемы",()->showList("Команда"),false);addText("Материалы",16,FG,true,8,8);
         List<Block> list=db.list(query);if(list.isEmpty())addCard(text("Ничего не найдено. Попробуй другой запрос или создай первый блок.",14,MUTED,false));else for(Block b:list)addBlockCard(b);}
-    private String meta(Block b){ArrayList<String> parts=new ArrayList<>();if(b.map!=null&&!b.map.trim().isEmpty())parts.add(b.map.trim());if(b.category!=null&&!b.category.trim().isEmpty())parts.add(b.category.trim());if(b.side!=null&&!b.side.trim().isEmpty())parts.add(b.side.trim());return android.text.TextUtils.join("  ·  ",parts);}
-    private void addBlockCard(Block b){LinearLayout c=column();LinearLayout top=row();top.addView(text(b.title,16,FG,true),new LinearLayout.LayoutParams(0,-2,1));top.addView(text("▧ "+b.photos.size(),12,MINT,true));c.addView(top);LinearLayout.LayoutParams mp=lp(-1,-2);mp.topMargin=dp(6);c.addView(text(meta(b),11,PURPLE,true),mp);
+    private String meta(Block b){ArrayList<String> parts=new ArrayList<>();if(b.map!=null&&!b.map.trim().isEmpty())parts.add(b.map.trim());if(b.category!=null&&!b.category.trim().isEmpty())parts.add(b.category.trim());if(b.side!=null&&!b.side.trim().isEmpty())parts.add(b.side.trim());if(b.plant!=null&&!b.plant.trim().isEmpty())parts.add(b.plant.trim());if(b.grenadeType!=null&&!b.grenadeType.trim().isEmpty())parts.add(b.grenadeType.trim());return android.text.TextUtils.join("  ·  ",parts);}
+    private void addBlockCard(Block b){LinearLayout c=column();LinearLayout top=row();top.addView(text(b.title,16,FG,true),new LinearLayout.LayoutParams(0,-2,1));top.addView(text("▧ "+b.photos.size()+"   ▶ "+b.videos.size(),12,MINT,true));c.addView(top);LinearLayout.LayoutParams mp=lp(-1,-2);mp.topMargin=dp(6);c.addView(text(meta(b),11,PURPLE,true),mp);
         TextView desc=text(b.description.isEmpty()?"Без описания":b.description,13,MUTED,false);desc.setMaxLines(2);LinearLayout.LayoutParams dpv=lp(-1,-2);dpv.topMargin=dp(6);c.addView(desc,dpv);addCard(c);c.setClickable(true);c.setOnClickListener(v->showDetail(b.rowId));}
-    private void showDetail(long id){Block b=db.get(id);if(b==null){showList("");return;}shell(b.title,meta(b),true,this::showHome);addText(b.description.isEmpty()?"Описание пока не добавлено.":b.description,15,FG,false,4,16);
-        if(b.photos.isEmpty())addCard(text("Фотографии не добавлены.",13,MUTED,false));else{addText("Фото и порядок выполнения · "+b.photos.size(),15,FG,true,0,9);int index=1;for(String path:b.photos){File f=new File(path);if(!f.isFile()){index++;continue;}ImageView image=new ImageView(this);image.setBackground(shape(SURFACE,0,14));image.setScaleType(ImageView.ScaleType.FIT_CENTER);Bitmap bm=decodeSampled(path,1100,1100);if(bm!=null)image.setImageBitmap(bm);LinearLayout.LayoutParams p=lp(-1,240);p.bottomMargin=dp(5);page.addView(image,p);addText("Фото "+index,11,MUTED,false,0,12);index++;}}
-        if(adminSession){gap(4);addButton("Изменить блок",()->startEditor(b),true);addButton("Удалить блок",()->confirmDelete(b),false);}addButton("← К списку",()->showList(""),false);}
+    private void showDetail(long id){
+        Block b=db.get(id);if(b==null){showList("");return;}
+        shell(b.title,meta(b),true,this::showHome);
+        addText(b.description.isEmpty()?"Описание пока не добавлено.":b.description,15,FG,false,4,16);
+        if(b.photos.isEmpty())addCard(text("Фотографии не добавлены.",13,MUTED,false));
+        else{
+            addText("Фото и порядок выполнения · "+b.photos.size(),15,FG,true,0,9);int index=1;
+            for(String path:b.photos){
+                File f=new File(path);if(!f.isFile()){index++;continue;}
+                ImageView image=new ImageView(this);image.setBackground(shape(SURFACE,0,14));image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                Bitmap bm=decodeSampled(path,1100,1100);if(bm!=null)image.setImageBitmap(bm);
+                LinearLayout.LayoutParams p=lp(-1,240);p.bottomMargin=dp(5);page.addView(image,p);
+                image.setOnClickListener(v->showImageFull(path));addText("Фото "+index+" · нажми, чтобы открыть",11,MUTED,false,0,12);index++;
+            }
+        }
+        if(!b.videos.isEmpty()){
+            addText("Видео · "+b.videos.size(),15,FG,true,0,9);int index=1;
+            for(String path:b.videos){File f=new File(path);if(!f.isFile())continue;addText("▶ Видео "+index+" · "+f.getName(),12,PURPLE,true,0,4);
+                VideoView player=new VideoView(this);player.setVideoPath(path);MediaController controls=new MediaController(this);controls.setAnchorView(player);player.setMediaController(controls);
+                LinearLayout.LayoutParams vp=lp(-1,220);vp.bottomMargin=dp(14);page.addView(player,vp);index++;
+            }
+        }
+        if(adminSession){gap(4);addButton("Изменить блок",()->startEditor(b),true);addButton("Удалить блок",()->confirmDelete(b),false);}
+        addButton("← К списку",()->showList(""),false);
+    }
+
+    private void showImageFull(String path){
+        Bitmap bitmap=decodeSampled(path,2200,2200);if(bitmap==null)return;
+        android.app.Dialog dialog=new android.app.Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        ImageView image=new ImageView(this);image.setBackgroundColor(Color.BLACK);image.setImageBitmap(bitmap);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        dialog.setContentView(image);image.setOnClickListener(v->dialog.dismiss());dialog.show();
+        if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawableResource(android.R.color.black);dialog.getWindow().setLayout(-1,-1);}
+    }
+
     private Bitmap decodeSampled(String path,int reqW,int reqH){try{BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(path,bounds);int sample=1;while(bounds.outWidth/sample>reqW*2||bounds.outHeight/sample>reqH*2)sample*=2;BitmapFactory.Options o=new BitmapFactory.Options();o.inSampleSize=sample;o.inPreferredConfig=Bitmap.Config.RGB_565;return BitmapFactory.decodeFile(path,o);}catch(Throwable ignored){return null;}}
     private void confirmDelete(Block b){new AlertDialog.Builder(this).setTitle("Удалить блок?").setMessage("«"+b.title+"» будет удалён с этого устройства.").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{db.delete(b.rowId);Toast.makeText(this,"Блок удалён",Toast.LENGTH_SHORT).show();showList("");}).show();}
     private void openAdmin(){showAdminLogin();}
@@ -145,29 +191,79 @@ public class MainActivity extends Activity {
         addButton("Выйти из администратора",()->{adminSession=false;sessionAdminPassword="";showAdminLogin();},false);
     }
 
-    private void startEditor(Block existing){draft=existing==null?new Block():existing.copy();draftPhotos=new ArrayList<>(existing==null?new ArrayList<>():existing.photos);showEditor();}
-    private void showEditor(){shell(draft.rowId==0?"Новый блок":"Редактирование","НАЗВАНИЕ, КАРТА, ОПИСАНИЕ И ФОТО",true,()->{if(draft.rowId>0)showDetail(draft.rowId);else showAdminMenu();});
-        addText("Название блока *",12,MUTED,true,0,5);edTitle=field("Например: Смок на мид",draft.title,false);addText("Карта",12,MUTED,true,0,5);edMap=field("Название карты",draft.map,false);
-        addText("Тип материала",12,MUTED,true,0,5);edCategory=field("Раскидка / Тактика / Командная схема",draft.category,false);addText("Сторона",12,MUTED,true,0,5);edSide=field("Атака / Защита / Любая сторона",draft.side,false);
-        addText("Описание и порядок действий *",12,MUTED,true,0,5);edDescription=field("Куда встать, куда смотреть и когда бросать…",draft.description,true);addText("Фотографии · "+draftPhotos.size()+" из 12",15,FG,true,4,9);
-        if(draftPhotos.isEmpty())addCard(text("Добавь несколько скриншотов: позиция, прицел и результат.",13,MUTED,false));else for(int i=0;i<draftPhotos.size();i++){final int ix=i;LinearLayout r=row();File f=new File(draftPhotos.get(i));ImageView img=new ImageView(this);img.setBackground(shape(SURFACE2,0,10));img.setScaleType(ImageView.ScaleType.CENTER_CROP);Bitmap bm=decodeSampled(f.getAbsolutePath(),220,220);if(bm!=null)img.setImageBitmap(bm);r.addView(img,lp(72,72));
-            LinearLayout details=column();details.setPadding(dp(10),0,0,0);details.addView(text("Фото "+(i+1),13,FG,true));details.addView(text(f.exists()?"Сохранено на устройстве":"Файл не найден",11,MUTED,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));TextView remove=text("Убрать",12,Color.rgb(255,130,150),true);r.addView(remove);remove.setOnClickListener(v->{captureDraft();draftPhotos.remove(ix);showEditor();});addCard(r);}
-        addButton("＋  Добавить фотографии",this::pickPhotos,false);addButton("Сохранить блок",this::saveEditor,true);}
-    private void captureDraft(){if(draft==null||edTitle==null)return;draft.title=edTitle.getText().toString().trim();draft.map=edMap.getText().toString().trim();draft.category=edCategory.getText().toString().trim();draft.side=edSide.getText().toString().trim();draft.description=edDescription.getText().toString().trim();}
-    private void saveEditor(){captureDraft();if(draft.title.isEmpty()){Toast.makeText(this,"Добавь название блока",Toast.LENGTH_SHORT).show();return;}if(draft.description.isEmpty()){Toast.makeText(this,"Добавь описание или порядок действий",Toast.LENGTH_SHORT).show();return;}
-        try{db.save(draft,draftPhotos);long id=draft.rowId;Toast.makeText(this,"Блок сохранён офлайн",Toast.LENGTH_SHORT).show();showDetail(id);}catch(Exception e){Toast.makeText(this,"Не удалось сохранить: "+e.getMessage(),Toast.LENGTH_LONG).show();}}
+    private void startEditor(Block existing){
+        draft=existing==null?new Block():existing.copy();draftPhotos=new ArrayList<>(existing==null?new ArrayList<>():existing.photos);draftVideos=new ArrayList<>(existing==null?new ArrayList<>():existing.videos);showEditor();
+    }
+
+    private void showEditor(){
+        shell(draft.rowId==0?"Новый блок":"Редактирование","КАРТА · СТОРОНА · ПЛЕНТ · ГРАНАТА · МЕДИА",true,()->{if(draft.rowId>0)showDetail(draft.rowId);else showAdminMenu();});
+        addText("Название блока *",12,MUTED,true,0,5);edTitle=field("Например: Смок на мид",draft.title,false);
+        addText("Карта *",12,MUTED,true,0,5);edMap=makeDropdown(new String[]{"Выбери карту","Duna","Sandstone","Province","Prison","Rust","Hanami","Breeze"},draft.map);
+        addText("Категория",12,MUTED,true,0,5);edCategory=makeDropdown(new String[]{"Раскидка","Тактика","Командная схема"},draft.category);
+        addText("Сторона",12,MUTED,true,0,5);edSide=makeDropdown(new String[]{"Атака","Оборона"},draft.side);
+        addText("Плент",12,MUTED,true,0,5);edPlant=makeDropdown(new String[]{"Не указан","Плент A","Плент B"},draft.plant);
+        addText("Тип гранаты",12,MUTED,true,0,5);edGrenade=makeDropdown(new String[]{"Не указано","Хае","Молотов","Флеш","Смок"},draft.grenadeType);
+        addText("Описание и порядок действий",12,MUTED,true,0,5);edDescription=field("Куда встать, куда смотреть и когда бросать…",draft.description,true);
+        addText("Фотографии · "+draftPhotos.size()+" из 12",15,FG,true,4,9);
+        if(draftPhotos.isEmpty())addCard(text("Добавь скриншоты позиции, прицела и результата.",13,MUTED,false));
+        else for(int i=0;i<draftPhotos.size();i++){final int ix=i;LinearLayout r=row();File f=new File(draftPhotos.get(i));ImageView img=new ImageView(this);img.setBackground(shape(SURFACE2,0,10));img.setScaleType(ImageView.ScaleType.CENTER_CROP);Bitmap bm=decodeSampled(f.getAbsolutePath(),220,220);if(bm!=null)img.setImageBitmap(bm);r.addView(img,lp(72,72));LinearLayout details=column();details.setPadding(dp(10),0,0,0);details.addView(text("Фото "+(i+1),13,FG,true));details.addView(text(f.exists()?"Сохранено на устройстве":"Файл не найден",11,MUTED,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));TextView remove=text("Убрать",12,Color.rgb(255,130,150),true);r.addView(remove);remove.setOnClickListener(v->{captureDraft();draftPhotos.remove(ix);showEditor();});addCard(r);}
+        addButton("＋  Добавить фотографии",this::pickPhotos,false);
+        addText("Видео · "+draftVideos.size()+" из 4",15,FG,true,3,9);
+        if(draftVideos.isEmpty())addCard(text("Добавь короткий ролик с демонстрацией раскидки. До 40 МБ на ролик.",13,MUTED,false));
+        else for(int i=0;i<draftVideos.size();i++){final int ix=i;File f=new File(draftVideos.get(i));LinearLayout r=row();r.addView(text("▶",22,PURPLE,true),lp(34,44));LinearLayout details=column();details.setPadding(dp(8),0,0,0);details.addView(text("Видео "+(i+1),13,FG,true));details.addView(text(f.exists()?f.getName():"Файл не найден",11,MUTED,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));TextView remove=text("Убрать",12,Color.rgb(255,130,150),true);r.addView(remove);remove.setOnClickListener(v->{captureDraft();draftVideos.remove(ix);showEditor();});addCard(r);}
+        addButton("＋  Добавить видео",this::pickVideos,false);addButton("Сохранить блок",this::saveEditor,true);
+    }
+
+    private String selected(Spinner spinner,String fallback){Object value=spinner==null?null:spinner.getSelectedItem();return value==null?fallback:value.toString();}
+    private void captureDraft(){
+        if(draft==null||edTitle==null)return;
+        draft.title=edTitle.getText().toString().trim();String map=selected(edMap,"");draft.map="Выбери карту".equals(map)?"":map;
+        draft.category=selected(edCategory,"Раскидка");draft.side=selected(edSide,"Атака");
+        String plant=selected(edPlant,"Не указан");draft.plant="Не указан".equals(plant)?"":plant;
+        String grenade=selected(edGrenade,"Не указано");draft.grenadeType="Не указано".equals(grenade)?"":grenade;
+        draft.description=edDescription.getText().toString().trim();draft.photos=new ArrayList<>(draftPhotos);draft.videos=new ArrayList<>(draftVideos);
+    }
+
+    private void saveEditor(){
+        captureDraft();if(draft.title.isEmpty()){Toast.makeText(this,"Добавь название блока",Toast.LENGTH_SHORT).show();return;}
+        if(draft.map.isEmpty()){Toast.makeText(this,"Выбери карту",Toast.LENGTH_SHORT).show();return;}
+        if(draft.description.isEmpty()){Toast.makeText(this,"Добавь описание или порядок действий",Toast.LENGTH_SHORT).show();return;}
+        try{db.save(draft,draftPhotos,draftVideos);long id=draft.rowId;Toast.makeText(this,"Блок сохранён офлайн",Toast.LENGTH_SHORT).show();showDetail(id);}
+        catch(Exception e){Toast.makeText(this,"Не удалось сохранить: "+e.getMessage(),Toast.LENGTH_LONG).show();}
+    }
+
     private void pickPhotos(){captureDraft();if(draftPhotos.size()>=12){Toast.makeText(this,"Максимум 12 фото в одном блоке",Toast.LENGTH_SHORT).show();return;}Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("image/*");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,PICK_PHOTOS);}
+    private void pickVideos(){captureDraft();if(draftVideos.size()>=4){Toast.makeText(this,"Максимум 4 видео в одном блоке",Toast.LENGTH_SHORT).show();return;}Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("video/*");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,PICK_VIDEOS);}
     private void pickImport(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,PICK_IMPORT);}
-    private void pickExport(){if(!adminSession){Toast.makeText(this,"Сначала войди как администратор",Toast.LENGTH_SHORT).show();return;}Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/octet-stream");i.putExtra(Intent.EXTRA_TITLE,"community.lineup");startActivityForResult(i,PICK_EXPORT);}
-    @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(result!=RESULT_OK||data==null||(data.getData()==null&&data.getClipData()==null))return;try{
-        if(req==PICK_PHOTOS){captureDraft();ArrayList<Uri> selected=new ArrayList<>();if(data.getClipData()!=null){for(int i=0;i<data.getClipData().getItemCount();i++)selected.add(data.getClipData().getItemAt(i).getUri());}else selected.add(data.getData());int count=0;for(Uri uri:selected){if(draftPhotos.size()>=12)break;String path=copyPhoto(uri);if(path!=null){draftPhotos.add(path);count++;}}Toast.makeText(this,"Добавлено фото: "+count,Toast.LENGTH_SHORT).show();showEditor();}
-        else if(req==PICK_IMPORT){int n=PackManager.importFromUri(this,db,data.getData());Toast.makeText(this,"Импортировано блоков: "+n,Toast.LENGTH_LONG).show();if(adminSession)showAdminMenu();else showHome();}
-        else if(req==PICK_EXPORT){PackManager.exportToUri(this,db,data.getData());Toast.makeText(this,"Резервная копия .lineup сохранена",Toast.LENGTH_LONG).show();showAdminMenu();}
-         else if(req==PICK_UPDATE){PackManager.exportToUri(this,db,data.getData(),prefs.getString("telegram_url","https://t.me/"));showPcPublishInstructions();}
-    }catch(Exception e){Toast.makeText(this,"Ошибка: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage()),Toast.LENGTH_LONG).show();if(req==PICK_PHOTOS)showEditor();}}
-    private String copyPhoto(Uri uri){InputStream in=null;try{File dir=new File(getFilesDir(),"lineup_images");if(!dir.exists()&&!dir.mkdirs())return null;String mime=getContentResolver().getType(uri);String ext=mime!=null&&mime.toLowerCase(Locale.ROOT).contains("png")?".png":mime!=null&&mime.toLowerCase(Locale.ROOT).contains("webp")?".webp":".jpg";File target=new File(dir,java.util.UUID.randomUUID().toString()+ext);in=getContentResolver().openInputStream(uri);if(in==null)return null;
-        try(FileOutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[32768];int total=0,read;while((read=in.read(buffer))!=-1){total+=read;if(total>20*1024*1024){target.delete();throw new IllegalArgumentException("Фото не должно превышать 20 МБ");}out.write(buffer,0,read);}}return target.getAbsolutePath();
-    }catch(Exception e){Toast.makeText(this,"Не удалось добавить фото: "+e.getMessage(),Toast.LENGTH_LONG).show();return null;}finally{try{if(in!=null)in.close();}catch(Exception ignored){}}}
+    private void pickExport(){if(!adminSession){Toast.makeText(this,"Сначала войди как администратор",Toast.LENGTH_SHORT).show();return;}Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/octet-stream");i.putExtra(Intent.EXTRA_TITLE,"lineup-backup.lineup");startActivityForResult(i,PICK_EXPORT);}
+
+    @Override protected void onActivityResult(int req,int result,Intent data){
+        super.onActivityResult(req,result,data);if(result!=RESULT_OK||data==null||(data.getData()==null&&data.getClipData()==null))return;
+        try{
+            if(req==PICK_PHOTOS||req==PICK_VIDEOS){
+                captureDraft();ArrayList<Uri> selected=new ArrayList<>();if(data.getClipData()!=null){for(int i=0;i<data.getClipData().getItemCount();i++)selected.add(data.getClipData().getItemAt(i).getUri());}else selected.add(data.getData());int count=0;
+                for(Uri uri:selected){if(req==PICK_PHOTOS){if(draftPhotos.size()>=12)break;String path=copyPhoto(uri);if(path!=null){draftPhotos.add(path);count++;}}else{if(draftVideos.size()>=4)break;String path=copyVideo(uri);if(path!=null){draftVideos.add(path);count++;}}}
+                Toast.makeText(this,(req==PICK_PHOTOS?"Добавлено фото: ":"Добавлено видео: ")+count,Toast.LENGTH_SHORT).show();showEditor();
+            }else if(req==PICK_IMPORT){int n=PackManager.importFromUri(this,db,data.getData());Toast.makeText(this,"Импортировано блоков: "+n,Toast.LENGTH_LONG).show();if(adminSession)showAdminMenu();else showHome();}
+            else if(req==PICK_EXPORT){PackManager.exportToUri(this,db,data.getData());Toast.makeText(this,"Резервная копия .lineup сохранена",Toast.LENGTH_LONG).show();showAdminMenu();}
+            else if(req==PICK_UPDATE){PackManager.exportToUri(this,db,data.getData(),prefs.getString("telegram_url","https://t.me/"));showPcPublishInstructions();}
+        }catch(Exception e){Toast.makeText(this,"Ошибка: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage()),Toast.LENGTH_LONG).show();if(req==PICK_PHOTOS||req==PICK_VIDEOS)showEditor();}
+    }
+
+    private String copyPhoto(Uri uri){return copyMedia(uri,false);}
+    private String copyVideo(Uri uri){return copyMedia(uri,true);}
+    private String copyMedia(Uri uri,boolean video){
+        InputStream in=null;File target=null;
+        try{
+            File dir=new File(getFilesDir(),video?"lineup_videos":"lineup_images");if(!dir.exists()&&!dir.mkdirs())return null;
+            String mime=getContentResolver().getType(uri);String lower=mime==null?"":mime.toLowerCase(Locale.ROOT);
+            String ext=video?(lower.contains("webm")?".webm":lower.contains("quicktime")?".mov":lower.contains("3gpp")?".3gp":".mp4"):(lower.contains("png")?".png":lower.contains("webp")?".webp":".jpg");
+            target=new File(dir,java.util.UUID.randomUUID().toString()+ext);in=getContentResolver().openInputStream(uri);if(in==null)return null;int max=video?40*1024*1024:20*1024*1024;
+            try(FileOutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[32768];int total=0,read;while((read=in.read(buffer))!=-1){total+=read;if(total>max)throw new IllegalArgumentException(video?"Видео не должно превышать 40 МБ":"Фото не должно превышать 20 МБ");out.write(buffer,0,read);}}
+            return target.getAbsolutePath();
+        }catch(Exception e){if(target!=null)target.delete();Toast.makeText(this,"Не удалось добавить "+(video?"видео: ":"фото: ")+e.getMessage(),Toast.LENGTH_LONG).show();return null;}
+        finally{try{if(in!=null)in.close();}catch(Exception ignored){}}
+    }
     private void showUpdateGate(String message,String error) {
         databaseUnlocked=false;
         shell("База данных","ОБЯЗАТЕЛЬНАЯ СИНХРОНИЗАЦИЯ",false,null);
