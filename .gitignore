@@ -1,15 +1,9 @@
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-kemtiz/data/
-*.sqlite3
-*.sqlite3-shm
-*.sqlite3-wal
+.gradle/
+local.properties
+**/build/
+*.iml
+.idea/
+*.jks
+*.keystore
 .env
-
-# Local Kemtiz PC server data
-kemtiz-data/
-
-# Firebase project client settings kept locally
-app/google-services.json
+.DS_Store

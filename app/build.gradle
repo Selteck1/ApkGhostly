@@ -1,26 +1,52 @@
 plugins {
-    id "com.android.application"
+    id 'com.android.application'
 }
 
 android {
-    namespace "com.kemtiz.app"
+    namespace 'ru.selteck.lineup'
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.kemtiz.app"
-        minSdk 26
+        applicationId 'ru.selteck.lineup'
+        minSdk 24
         targetSdk 35
-        versionCode 30
-        versionName "3.1.0"
+        versionCode 1
+        versionName '1.0.0'
     }
-}
 
-dependencies {
-    implementation "androidx.credentials:credentials:1.6.0"
-    implementation "androidx.credentials:credentials-play-services-auth:1.6.0"
-    implementation "com.google.android.libraries.identity.googleid:googleid:1.2.1"
-    implementation "com.squareup.okhttp3:okhttp:4.12.0"
-    implementation "io.github.webrtc-sdk:android:150.7871.01"
-    implementation platform("com.google.firebase:firebase-bom:35.0.0")
-    implementation "com.google.firebase:firebase-messaging"
+    signingConfigs {
+        release {
+            def ksPath = System.getenv('LINEUP_KEYSTORE_PATH')
+            def ksPassword = System.getenv('LINEUP_KEYSTORE_PASSWORD')
+            def keyAliasValue = System.getenv('LINEUP_KEY_ALIAS')
+            def keyPasswordValue = System.getenv('LINEUP_KEY_PASSWORD')
+            if (ksPath && ksPassword && keyAliasValue && keyPasswordValue) {
+                storeFile file(ksPath)
+                storePassword ksPassword
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            if (System.getenv('LINEUP_KEYSTORE_PATH') &&
+                System.getenv('LINEUP_KEYSTORE_PASSWORD') &&
+                System.getenv('LINEUP_KEY_ALIAS') &&
+                System.getenv('LINEUP_KEY_PASSWORD')) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
 }

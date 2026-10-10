@@ -1,4 +1,0 @@
-<resources>
-    <string name="app_name">Kemtiz</string>
-    <string name="push_setup_hint">Уведомления настраиваются через Firebase Cloud Messaging.</string>
-</resources>

@@ -1,33 +1,36 @@
-# Kemtiz — Android messenger
+# Lineup — офлайн-справочник раскидок Standoff 2
 
-Kemtiz is an Android-only messaging app. Registration and login use Google sign-in, followed by a unique username and optional profile details.
+Lineup хранит раскидки и тактики на устройстве: карта, сторона, описание и несколько фотографий. После установки материалы открываются без интернета.
 
-## Android app
+## Возможности
+- Локальная база и офлайн-просмотр.
+- PIN-вход в локальный режим администратора.
+- Создание/изменение блоков и добавление до 12 фотографий.
+- Экспорт базы в пакет .lineup и импорт пакетов из файла.
+- Проверка каталога обновлений и SHA-256 для каждого пакета.
+- GitHub Actions собирает APK для тестирования.
+- Каталог контента обновляется автоматически при загрузке пакета в content/packs.
 
-- Interface bundled inside the APK; no PC/browser client is served.
-- Dark violet theme and matching Kemtiz K/orbit logo.
-- Google sign-in through Android Credential Manager.
-- User search, friend requests, private chats, groups (up to 10 members), message history, and live updates.
-- API: https://kemtiz-api.onrender.com
+## Скачать тестовый APK
+Открой вкладку Actions репозитория, выбери последний успешный запуск workflow "Build Android APK" и скачай artifact "lineup-debug-apk".
 
-## Build the APK
+## Добавить контент для всех пользователей
+1. В приложении открой «Администратор» → «Экспортировать пакет».
+2. Загрузи полученный community.lineup в content/packs на GitHub, заменив предыдущий файл.
+3. Workflow пересчитает SHA-256 и обновит content/catalog.json.
+4. Пользователь нажимает «Проверить обновления». Материалы сохраняются локально и остаются доступны без интернета.
 
-The GitHub Actions workflow **Build Kemtiz Android APK** builds a debug APK on pushes to `main` and `kemtiz-messenger`. Open the Actions run and download the `kemtiz-android-debug` artifact.
+Не загружай в GitHub личные ключи или пароли. Используй только скриншоты и материалы, которые разрешено распространять.
 
-Local build with Java 17 and Gradle 8.13:
+## Сборка
+Нужны JDK 17, Android SDK Platform 35 и Gradle 8.9:
+~~~sh
+gradle assembleDebug
+~~~
+APK: app/build/outputs/apk/debug/app-debug.apk.
 
-```sh
-gradle :app:assembleDebug
-```
+## Реклама
+Навязчивые полноэкранные объявления не включены. Реальную рекламу подключим после получения рекламного кабинета, SDK и ID блока. Не оставляй фиктивную рекламу в релизе и не добавляй незадекларированный рекламный SDK.
 
-Output: `app/build/outputs/apk/debug/app-debug.apk`.
-
-## Backend
-
-The FastAPI service in `kemtiz/` is API-only. Root returns service information; `/health` checks backend health; `/ws` provides realtime events. The browser/PWA frontend is bundled inside Android assets instead of being served by Render.
-
-Set `KEMTIZ_GOOGLE_CLIENT_ID` on Render to the Google OAuth Web client ID used as the server audience. Keep `KEMTIZ_SECRET` stable across deploys and configure persistent storage or a managed database for user/chat data. Do not put secrets in the repository.
-
-## Alpha limitations
-
-Kemtiz does not yet provide end-to-end encryption, push notifications, account recovery, file uploads, or full abuse/rate limiting. Avoid reusing passwords or storing highly sensitive conversations until security work is complete. HTTPS remains enabled for remote API and WebSocket traffic.
+## RuStore
+Для релиза создай собственный ключ подписи и сохрани его надёжно. Все будущие версии нужно подписывать тем же ключом. Debug APK — только для тестирования.
