@@ -50,7 +50,7 @@ echo.
 echo For phone testing on the SAME Wi-Fi, enter the PC IPv4 address in the app:
 echo   http://YOUR-PC-IP:8000
 echo The PC IPv4 addresses are shown below:
-ipconfig ^| findstr /i "IPv4"
+ipconfig
 echo If Windows Firewall asks, allow Python on Private networks.
 echo Database and token key are kept in: %DATA%
 echo.

@@ -124,6 +124,9 @@ public class CallActivity extends Activity {
             return;
         }
         if (targetName == null || targetName.isEmpty()) targetName = "Собеседник";
+        android.app.NotificationManager notificationManager =
+                (android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (notificationManager != null) notificationManager.cancel(27182);
         createUi();
         status("Подключаемся к Kemtiz…");
         if (hasMediaPermissions()) connectSocket();

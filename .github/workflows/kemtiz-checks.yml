@@ -21,6 +21,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r kemtiz/requirements.txt
+      - name: Verify WebSocket support is installed
+        run: python -c "import websockets; print('WebSocket runtime OK:', websockets.__version__)"
       - name: Compile backend
         run: python -m compileall -q kemtiz
       - name: Check native Android client

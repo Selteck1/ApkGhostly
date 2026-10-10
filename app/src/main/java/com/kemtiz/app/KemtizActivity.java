@@ -2,13 +2,20 @@ package com.kemtiz.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.app.PendingIntent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -44,6 +51,8 @@ import java.util.concurrent.TimeUnit;
 public class KemtizActivity extends Activity {
     private static final String DEFAULT_API = "https://kemtiz-api.onrender.com";
     private static final String SERVER_PREF = "server_base";
+    private static final String NOTIFICATION_CHANNEL = "kemtiz_activity";
+    private static final int CALL_NOTIFICATION_ID = 27182;
     private static final int BG = Color.rgb(10, 11, 17);
     private static final int SURFACE = Color.rgb(21, 22, 32);
     private static final int PANEL = Color.rgb(31, 30, 45);
@@ -69,11 +78,13 @@ public class KemtizActivity extends Activity {
     private LinearLayout root, page;
     private ScrollView scroll;
     private WebSocket socket;
+    private boolean activityVisible = false;
 
     private interface Result { void done(Object data, String error); }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        createNotificationChannel();
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         prefs = getSharedPreferences("kemtiz", MODE_PRIVATE);
@@ -232,7 +243,7 @@ public class KemtizActivity extends Activity {
         serverHeading.setTypeface(Typeface.DEFAULT_BOLD);
         content.addView(serverHeading, topMargin(match(), 22));
         content.addView(text(
-            "Для телефона в той же Wi-Fi-сети введи http://IP-адрес-ПК:8000. Для других сетей нужен публичный HTTPS-адрес.",
+            "В одной Wi-Fi-сети используй IP компьютера. Для друзей из интернета запусти start_kemtiz_public.bat и вставь выданный HTTPS-адрес.",
             11, MUTED, Gravity.START), topMargin(match(), 5));
         serverUrlField = field("http://192.168.1.100:8000");
         serverUrlField.setSingleLine(true);
@@ -397,6 +408,7 @@ public class KemtizActivity extends Activity {
         navLp.topMargin = dp(5);
         root.addView(nav, navLp);
         setContentView(root);
+        requestNotificationPermission();
         render();
     }
 
@@ -428,10 +440,10 @@ public class KemtizActivity extends Activity {
     }
 
     private void chats() {
-        heading("Твои чаты", "Все разговоры — в одном месте.");
+        heading("Сообщения", "Твои люди и разговоры в одном месте.");
         api("GET", "/api/chats", null, (data, error) -> {
             if (!"chats".equals(screen)) return;
-            page.removeAllViews(); heading("Твои чаты", "Все разговоры — в одном месте.");
+            page.removeAllViews(); heading("Сообщения", "Твои люди и разговоры в одном месте.");
             if (error != null) { empty("Не удалось загрузить чаты", error, "Повторить", this::chats); return; }
             JSONArray list = data instanceof JSONArray ? (JSONArray)data : new JSONArray();
             if (list.length() == 0) { empty("Здесь пока тихо", "Добавь друзей, чтобы начать переписку.", "Найти людей", () -> navigate("search")); return; }
@@ -587,21 +599,60 @@ public class KemtizActivity extends Activity {
         logout.setOnClickListener(v->{clearSession();login("");});
     }
 
+
+    private void addChatHeader() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(8), dp(8), dp(8), dp(8));
+        bar.setBackground(bg(SURFACE, 18));
+        Button back = button("‹", false);
+        back.setTextSize(27);
+        back.setPadding(0, 0, 0, 0);
+        bar.addView(back, new LinearLayout.LayoutParams(dp(43), dp(46)));
+        back.setOnClickListener(v -> navigate("chats"));
+        String titleText = currentChat == null ? "Чат" : currentChat.optString("title", "Чат");
+        TextView avatar = text(initial(titleText), 18, WHITE, Gravity.CENTER);
+        avatar.setTypeface(Typeface.DEFAULT_BOLD);
+        avatar.setBackground(bg(PURPLE, 24));
+        LinearLayout.LayoutParams avatarLp = new LinearLayout.LayoutParams(dp(43), dp(43));
+        avatarLp.leftMargin = dp(7);
+        bar.addView(avatar, avatarLp);
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams infoLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        infoLp.leftMargin = dp(10);
+        bar.addView(info, infoLp);
+        TextView title = text(titleText, 15, WHITE, Gravity.START);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        info.addView(title);
+        String stateText = "group".equals(currentChat == null ? "" : currentChat.optString("kind", ""))
+                ? "Групповой чат" : "Личный чат";
+        JSONArray members = currentChat == null ? null : currentChat.optJSONArray("members");
+        if (members != null && me != null) {
+            for (int i = 0; i < members.length(); i++) {
+                JSONObject member = members.optJSONObject(i);
+                if (member != null && member.optLong("id", -1) != me.optLong("id", -2)) {
+                    stateText = member.optBoolean("online", false) ? "В сети" : "Был(а) не в сети";
+                    break;
+                }
+            }
+        }
+        info.addView(text(stateText, 11, GREEN, Gravity.START), topMargin(match(), 3));
+        Button video = button("📹", true);
+        video.setTextSize(17);
+        bar.addView(video, new LinearLayout.LayoutParams(dp(52), dp(46)));
+        video.setOnClickListener(v -> startVideoCall());
+        page.addView(bar);
+    }
+
     private void chat(){
-        Button back=button("‹   Назад к чатам",false);page.addView(back);back.setOnClickListener(v->navigate("chats"));
-        heading(currentChat==null?"Чат":currentChat.optString("title","Чат"),"Переписка синхронизируется с сервером.");
-        Button callButton = button("📹  Видеозвонок", false);
-        page.addView(callButton, topMargin(match(), 8));
-        callButton.setOnClickListener(v -> startVideoCall());
+        addChatHeader();
         long id=chatId;
         api("GET","/api/chats/"+id+"/messages?limit=100",null,(data,error)->{
             if(!"chat".equals(screen)||id!=chatId)return;
             page.removeAllViews();
-            Button b=button("‹   Назад к чатам",false);page.addView(b);b.setOnClickListener(v->navigate("chats"));
-            heading(currentChat==null?"Чат":currentChat.optString("title","Чат"),"Сообщения Kemtiz");
-            Button callButtonInner = button("📹  Видеозвонок", false);
-            page.addView(callButtonInner, topMargin(match(), 8));
-            callButtonInner.setOnClickListener(v -> startVideoCall());
+            addChatHeader();
             if(error!=null)page.addView(text(error,13,Color.rgb(255,130,157),Gravity.START));
             JSONArray msgs=data instanceof JSONArray?(JSONArray)data:new JSONArray();
             if(msgs.length()==0)page.addView(text("Напиши первое сообщение 👋",13,MUTED,Gravity.CENTER),topMargin(match(),12));
@@ -702,11 +753,16 @@ public class KemtizActivity extends Activity {
                     main.post(()->{
                         if("message.new".equals(type)){
                             JSONObject m=event.optJSONObject("message");
+                            if (m != null && !activityVisible && me != null
+                                    && m.optLong("sender_id", -1) != me.optLong("id", -2)) {
+                                showMessageNotification(m);
+                            }
                             if("chat".equals(screen)&&m!=null&&m.optLong("chat_id",-1)==chatId)chat();
                             else if("chats".equals(screen))chats();
                         }else if("chat_list_changed".equals(type)&&"chats".equals(screen))chats();
                         else if("call.incoming".equals(type)){
-                            showIncomingCall(event);
+                            if (activityVisible) showIncomingCall(event);
+                            else showIncomingCallNotification(event);
                         }else if("call.error".equals(type)){
                             toast(event.optString("message","Не удалось начать звонок."));
                         }else if("friend_request".equals(type)&&"requests".equals(screen))requests();
@@ -720,6 +776,102 @@ public class KemtizActivity extends Activity {
         });
     }
 
+
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (manager != null) {
+                NotificationChannel channel = new NotificationChannel(
+                        NOTIFICATION_CHANNEL, "Kemtiz — сообщения и звонки", NotificationManager.IMPORTANCE_HIGH);
+                channel.setDescription("Новые сообщения и входящие видеозвонки");
+                manager.createNotificationChannel(channel);
+            }
+        }
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                && !prefs.getBoolean("notification_permission_requested", false)) {
+            prefs.edit().putBoolean("notification_permission_requested", true).apply();
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 5100);
+        }
+    }
+
+    private boolean canPostNotifications() {
+        return Build.VERSION.SDK_INT < 33
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void showMessageNotification(JSONObject message) {
+        if (!canPostNotifications()) return;
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        String sender = message.optString("sender_display_name",
+                message.optString("sender_username", "Новое сообщение"));
+        String body = message.optString("body", "Тебе отправили сообщение");
+        if (body.length() > 180) body = body.substring(0, 177) + "…";
+        Intent open = new Intent(this, KemtizActivity.class);
+        open.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pending = PendingIntent.getActivity(this,
+                4100 + (int) Math.max(0, message.optLong("chat_id", 0) % 500000), open,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification = new Notification.Builder(this, NOTIFICATION_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(sender)
+                .setContentText(body)
+                .setStyle(new Notification.BigTextStyle().bigText(body))
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .setCategory(Notification.CATEGORY_MESSAGE)
+                .setShowWhen(true)
+                .build();
+        manager.notify(10000 + (int) Math.max(0, message.optLong("chat_id", 0) % 90000), notification);
+    }
+
+    private void showIncomingCallNotification(JSONObject event) {
+        if (!canPostNotifications()) return;
+        long incomingChatId = event.optLong("chat_id", -1);
+        long callerId = event.optLong("from_user_id", -1);
+        String incomingCallId = event.optString("call_id", "");
+        String callerName = event.optString("from_display_name", event.optString("from_username", "Пользователь"));
+        if (incomingChatId <= 0 || callerId <= 0 || incomingCallId.isEmpty()) return;
+        Intent accept = new Intent(this, CallActivity.class);
+        accept.putExtra("server_base", serverBase);
+        accept.putExtra("token", token);
+        accept.putExtra("chat_id", incomingChatId);
+        accept.putExtra("target_id", callerId);
+        accept.putExtra("target_name", callerName);
+        accept.putExtra("call_id", incomingCallId);
+        accept.putExtra("mode", "answer");
+        accept.putExtra("video", true);
+        PendingIntent acceptPending = PendingIntent.getActivity(this, CALL_NOTIFICATION_ID, accept,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification = new Notification.Builder(this, NOTIFICATION_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Входящий видеозвонок")
+                .setContentText(callerName + " звонит тебе")
+                .setContentIntent(acceptPending)
+                .addAction(android.R.drawable.ic_menu_call, "Принять", acceptPending)
+                .setAutoCancel(true)
+                .setCategory(Notification.CATEGORY_CALL)
+                .setOngoing(false)
+                .setShowWhen(true)
+                .build();
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(CALL_NOTIFICATION_ID, notification);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        activityVisible = true;
+    }
+
+    @Override protected void onPause() {
+        activityVisible = false;
+        super.onPause();
+    }
 
     private void startVideoCall() {
         if (currentChat == null || chatId <= 0) {
@@ -824,8 +976,8 @@ public class KemtizActivity extends Activity {
         http.newCall(b.build()).enqueue(new Callback(){
             @Override public void onFailure(Call call,IOException e){
                 String message = e instanceof java.net.SocketTimeoutException
-                    ? "Сервер долго отвечает. Проверь, что сервер запущен на ПК и телефон подключён к той же Wi-Fi-сети."
-                    : "Нет соединения. Проверь адрес сервера, Wi-Fi и разрешение Windows Firewall.";
+                    ? "Сервер долго отвечает. Проверь, что сервер запущен на ПК и публичный HTTPS-адрес активен."
+                    : "Нет соединения. Проверь адрес сервера, запущен ли start_kemtiz_server.bat и разрешение Windows Firewall.";
                 main.post(()->callback.done(null,message));
             }
             @Override public void onResponse(Call call,Response response)throws IOException{
