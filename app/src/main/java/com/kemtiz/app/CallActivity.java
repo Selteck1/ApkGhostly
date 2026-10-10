@@ -25,6 +25,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.webrtc.AudioSource;
@@ -127,6 +128,9 @@ public class CallActivity extends Activity {
     private CameraVideoCapturer cameraCapturer;
     private SurfaceTextureHelper surfaceTextureHelper;
     private final List<IceCandidate> queuedCandidates = new ArrayList<>();
+    private final List<PeerConnection.IceServer> iceServers = new ArrayList<>();
+    private boolean turnConfigured = false;
+    private String iceConfigProblem = "";
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -152,7 +156,7 @@ public class CallActivity extends Activity {
         if (notificationManager != null) notificationManager.cancel(27182);
         createUi();
         status("Подключаемся к Kemtiz…");
-        if (hasMediaPermissions()) connectSocket();
+        if (hasMediaPermissions()) fetchIceConfigAndConnect();
         else requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, REQ_MEDIA);
     }
 
@@ -356,7 +360,7 @@ public class CallActivity extends Activity {
         boolean granted = grantResults.length >= 2
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED
                 && grantResults[1] == PackageManager.PERMISSION_GRANTED;
-        if (granted) connectSocket();
+        if (granted) fetchIceConfigAndConnect();
         else if (outgoing) {
             status("Для видеозвонка нужны камера и микрофон.");
             main.postDelayed(this::finish, 1200);
@@ -371,6 +375,95 @@ public class CallActivity extends Activity {
         if (serverBase.startsWith("https://")) return "wss://" + serverBase.substring(8) + "/ws";
         if (serverBase.startsWith("http://")) return "ws://" + serverBase.substring(7) + "/ws";
         return serverBase + "/ws";
+    }
+
+    private void fetchIceConfigAndConnect() {
+        String base = serverBase.replaceAll("/+$", "");
+        Request request = new Request.Builder()
+                .url(base + "/api/ice-config")
+                .header("Authorization", "Bearer " + token)
+                .get()
+                .build();
+        status("Получаем настройки видеосвязи…");
+        http.newCall(request).enqueue(new okhttp3.Callback() {
+            @Override public void onFailure(okhttp3.Call call, java.io.IOException error) {
+                main.post(() -> {
+                    if (isFinishing()) return;
+                    useFallbackIceServers();
+                    iceConfigProblem = "Не удалось получить TURN-настройки. Обнови серверный пакет.";
+                    status("Настройки TURN недоступны; прямой звонок может не пройти в этой сети.");
+                    connectSocket();
+                });
+            }
+
+            @Override public void onResponse(okhttp3.Call call, Response response) {
+                List<PeerConnection.IceServer> parsed = new ArrayList<>();
+                boolean hasTurn = false;
+                String problem = "";
+                try (okhttp3.ResponseBody body = response.body()) {
+                    String raw = body == null ? "" : body.string();
+                    if (!response.isSuccessful()) {
+                        throw new java.io.IOException("ICE config HTTP " + response.code());
+                    }
+                    JSONObject root = new JSONObject(raw);
+                    JSONArray servers = root.optJSONArray("iceServers");
+                    if (servers != null) {
+                        for (int i = 0; i < servers.length(); i++) {
+                            JSONObject item = servers.optJSONObject(i);
+                            if (item == null) continue;
+                            List<String> urls = new ArrayList<>();
+                            Object rawUrls = item.opt("urls");
+                            if (rawUrls instanceof String) urls.add((String) rawUrls);
+                            else if (rawUrls instanceof JSONArray) {
+                                JSONArray list = (JSONArray) rawUrls;
+                                for (int j = 0; j < list.length(); j++) {
+                                    String url = list.optString(j, "");
+                                    if (!url.isEmpty()) urls.add(url);
+                                }
+                            }
+                            if (urls.isEmpty()) continue;
+                            PeerConnection.IceServer.Builder builder = PeerConnection.IceServer.builder(urls);
+                            String username = item.optString("username", "");
+                            String credential = item.optString("credential", item.optString("password", ""));
+                            if (!username.isEmpty()) builder.setUsername(username);
+                            if (!credential.isEmpty()) builder.setPassword(credential);
+                            parsed.add(builder.createIceServer());
+                            for (String url : urls) {
+                                if (url.startsWith("turn:") || url.startsWith("turns:")) hasTurn = true;
+                            }
+                        }
+                    }
+                    if (parsed.isEmpty()) throw new java.io.IOException("No usable ICE servers");
+                    if (!hasTurn || !root.optBoolean("turn_configured", hasTurn)) {
+                        problem = "TURN не настроен на сервере. Некоторые мобильные сети блокируют прямые звонки.";
+                    }
+                } catch (Exception error) {
+                    parsed.clear();
+                    problem = "Не удалось прочитать TURN-настройки. Обнови сервер и проверь ключи Cloudflare.";
+                }
+
+                final List<PeerConnection.IceServer> result = parsed;
+                final boolean hasRelay = hasTurn;
+                final String configProblem = problem;
+                main.post(() -> {
+                    if (isFinishing()) return;
+                    iceServers.clear();
+                    if (result.isEmpty()) useFallbackIceServers();
+                    else iceServers.addAll(result);
+                    turnConfigured = hasRelay;
+                    iceConfigProblem = configProblem;
+                    if (!iceConfigProblem.isEmpty()) status(iceConfigProblem);
+                    connectSocket();
+                });
+            }
+        });
+    }
+
+    private void useFallbackIceServers() {
+        iceServers.clear();
+        iceServers.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
+        iceServers.add(PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer());
+        turnConfigured = false;
     }
 
     private void connectSocket() {
@@ -552,10 +645,8 @@ public class CallActivity extends Activity {
             }, 7000);
             videoTrack = factory.createVideoTrack("kemtiz-video", videoSource);
             videoTrack.addSink(localRenderer);
-            List<PeerConnection.IceServer> iceServers = new ArrayList<>();
-            iceServers.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
-            iceServers.add(PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer());
-            PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(iceServers);
+            if (iceServers.isEmpty()) useFallbackIceServers();
+            PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(new ArrayList<>(iceServers));
             config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
             peerConnection = factory.createPeerConnection(config, new PeerConnection.Observer() {
                 @Override public void onSignalingChange(PeerConnection.SignalingState state) { }
@@ -574,7 +665,11 @@ public class CallActivity extends Activity {
                         }, 10000);
                     } else if (state == PeerConnection.IceConnectionState.FAILED) {
                         iceConnected = false;
-                        status("Телефоны не смогли соединиться напрямую. Нужен TURN-сервер или другая сеть.");
+                        if (!turnConfigured) {
+                            status("Сеть блокирует прямой маршрут: TURN не настроен. Добавь ключи Cloudflare на сервер.");
+                        } else {
+                            status("TURN включён, но соединение не установлено. Проверь Cloudflare TURN и попробуй другую сеть.");
+                        }
                     } else if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
                         iceConnected = false;
                         status("Связь прервана, пытаемся восстановить…");

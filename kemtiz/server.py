@@ -27,6 +27,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent
+
+
+def load_local_turn_env() -> None:
+    """Load only TURN secrets from a private file beside the PC server launcher."""
+    env_path = ROOT.parent / "kemtiz-turn.env"
+    if not env_path.is_file():
+        return
+    allowed = {"CLOUDFLARE_TURN_KEY_ID", "CLOUDFLARE_TURN_API_TOKEN"}
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8-sig").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            if key in allowed and value and not os.environ.get(key):
+                os.environ[key] = value
+    except OSError:
+        logging.getLogger("kemtiz.turn").warning("Could not read kemtiz-turn.env.")
+
+
+load_local_turn_env()
 DATA_DIR = Path(os.environ.get("KEMTIZ_DATA_DIR", str(ROOT / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = Path(os.environ.get("KEMTIZ_DB_PATH", str(DATA_DIR / "kemtiz.sqlite3")))
@@ -1000,6 +1022,79 @@ async def delete_message(message_id: int, user=Depends(auth_user)):
     await live.chat_event(cid,{"type":"chat_list_changed"})
     return {"ok":True}
 
+
+
+@app.get("/api/ice-config")
+async def get_ice_config(user=Depends(auth_user)):
+    """Return per-request ICE config; Cloudflare's long-lived API token never leaves this server."""
+    key_id = os.environ.get("CLOUDFLARE_TURN_KEY_ID", "").strip()
+    api_token = os.environ.get("CLOUDFLARE_TURN_API_TOKEN", "").strip()
+    if not key_id or not api_token:
+        return {
+            "turn_configured": False,
+            "message": "TURN is not configured on this server.",
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"]}
+            ],
+        }
+
+    endpoint = f"https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate-ice-servers"
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
+                json={"ttl": 86400},
+            )
+        if response.status_code != 201:
+            logging.getLogger("kemtiz.turn").warning(
+                "Cloudflare TURN credential request failed with HTTP %s.", response.status_code
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Cloudflare TURN не смог выдать временные данные. Проверь TURN Key ID и API Token на сервере."
+            )
+        payload = response.json()
+        ice_servers = payload.get("iceServers")
+        if not isinstance(ice_servers, list) or not ice_servers:
+            raise ValueError("Cloudflare response contains no iceServers")
+
+        filtered = []
+        for item in ice_servers:
+            if not isinstance(item, dict):
+                continue
+            urls = item.get("urls", [])
+            if isinstance(urls, str):
+                urls = [urls]
+            if not isinstance(urls, list):
+                continue
+            # Port 53 is often blocked; keep TLS port 5349 and HTTPS-friendly 443.
+            urls = [str(url) for url in urls if isinstance(url, str)
+                    and not re.search(r":53(?:\\?|$)", url)]
+            if not urls:
+                continue
+            safe_item = {"urls": urls}
+            if item.get("username"):
+                safe_item["username"] = item["username"]
+            if item.get("credential"):
+                safe_item["credential"] = item["credential"]
+            filtered.append(safe_item)
+        has_turn = any(
+            str(url).startswith(("turn:", "turns:"))
+            for item in filtered
+            for url in (item["urls"] if isinstance(item["urls"], list) else [item["urls"]])
+        )
+        if not filtered or not has_turn:
+            raise ValueError("Cloudflare response contains no usable TURN URLs")
+        return {"turn_configured": True, "ttl": 86400, "iceServers": filtered}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.getLogger("kemtiz.turn").warning("Cloudflare TURN setup failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="Не удалось получить TURN-конфигурацию. Проверь интернет сервера и настройки Cloudflare TURN."
+        ) from exc
 
 
 async def dispatch_call_message(uid: int, data: dict[str, Any]) -> None:

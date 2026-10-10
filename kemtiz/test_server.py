@@ -76,6 +76,22 @@ class KemtizApiTests(unittest.TestCase):
         self.assertNotIn("password", data["user"])
         return credential, identity, data, data["token"]
 
+
+    def test_ice_config_requires_auth_and_has_stun_fallback(self):
+        unauthorized = self.client.get("/api/ice-config")
+        self.assertEqual(unauthorized.status_code, 401)
+        with patch.dict(os.environ, {"CLOUDFLARE_TURN_KEY_ID": "", "CLOUDFLARE_TURN_API_TOKEN": ""}):
+            response = self.client.get("/api/ice-config", headers=self.auth(self.alice_token))
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertFalse(payload["turn_configured"])
+        self.assertTrue(payload["iceServers"])
+        self.assertTrue(any(
+            str(url).startswith("stun:")
+            for item in payload["iceServers"]
+            for url in (item["urls"] if isinstance(item["urls"], list) else [item["urls"]])
+        ))
+
     def test_password_register_login_and_wrong_password(self):
         username = "pass_user_01"
         password = "correct-horse-123"
