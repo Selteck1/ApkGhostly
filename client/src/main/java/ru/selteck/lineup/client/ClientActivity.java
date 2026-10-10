@@ -171,6 +171,108 @@ public class ClientActivity extends Activity {
         });
     }
 
+    private RemoteContent loadRemoteContent(JSONObject catalog)throws Exception{
+        RemoteContent result=new RemoteContent();
+        result.revision=catalog.optLong("revision",0);
+        JSONArray packs=catalog.optJSONArray("packs");
+        if(packs==null)throw new IllegalArgumentException("В каталоге отсутствует список пакетов.");
+        for(int i=0;i<packs.length();i++){
+            JSONObject item=packs.getJSONObject(i);
+            String id=item.optString("id",""),file=item.optString("file",""),expected=item.optString("sha256","").toLowerCase(Locale.ROOT);
+            if(!id.matches("[A-Za-z0-9_-]{1,100}"))throw new IllegalArgumentException("Неправильный ID пакета.");
+            if(!file.startsWith("content/packs/")||file.contains("..")||file.startsWith("/"))
+                throw new IllegalArgumentException("Каталог содержит недопустимый путь пакета.");
+            if(!expected.matches("[0-9a-f]{64}"))throw new IllegalArgumentException("Неправильная контрольная сумма пакета "+id);
+            byte[] packageBytes=loadCachedPack(id,file,expected);
+            addPackage(result,id,packageBytes);
+        }
+        return result;
+    }
+
+    private byte[] loadCachedPack(String id,String file,String expected)throws Exception{
+        java.io.File cacheDir=new java.io.File(getFilesDir(),"remote_packs");
+        if(!cacheDir.isDirectory()&&!cacheDir.mkdirs())throw new IllegalStateException("Не удалось создать кеш базы.");
+        java.io.File cached=new java.io.File(cacheDir,id+".lineup");
+        if(cached.isFile()){
+            try{
+                byte[] local=readFileLimited(cached,128*1024*1024);
+                if(expected.equals(sha256(local)))return local;
+            }catch(Exception ignored){}
+        }
+        String address="https://raw.githubusercontent.com/Selteck1/ApkGhostly/main/"+file.replace(" ","%20");
+        byte[] remote=download(address+"?nocache="+System.currentTimeMillis(),128*1024*1024);
+        if(!expected.equals(sha256(remote)))throw new IllegalArgumentException("Не совпала контрольная сумма пакета "+id+". Повтори проверку.");
+        java.io.File temp=new java.io.File(cacheDir,id+".tmp");
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(temp)){out.write(remote);out.getFD().sync();}
+        if(cached.exists()&&!cached.delete()){temp.delete();throw new IllegalStateException("Не удалось заменить кеш пакета.");}
+        if(!temp.renameTo(cached)){temp.delete();throw new IllegalStateException("Не удалось сохранить обновлённую базу.");}
+        return remote;
+    }
+
+    private void addPackage(RemoteContent target,String packId,byte[] bytes)throws Exception{
+        Map<String,byte[]> entries=new HashMap<>();
+        int total=0;
+        try(ZipInputStream zip=new ZipInputStream(new java.io.ByteArrayInputStream(bytes),StandardCharsets.UTF_8)){
+            ZipEntry entry;byte[] buffer=new byte[32768];
+            while((entry=zip.getNextEntry())!=null){
+                if(entry.isDirectory())continue;
+                String name=entry.getName();
+                if(name.startsWith("/")||name.contains("..")||!(name.equals("manifest.json")||name.startsWith("images/")))
+                    throw new IllegalArgumentException("В пакете найден недопустимый путь.");
+                ByteArrayOutputStream out=new ByteArrayOutputStream();int n;
+                while((n=zip.read(buffer))!=-1){
+                    total+=n;if(total>128*1024*1024)throw new IllegalArgumentException("Распакованный пакет слишком большой.");
+                    out.write(buffer,0,n);
+                }
+                entries.put(name,out.toByteArray());zip.closeEntry();
+            }
+        }
+        byte[] manifestBytes=entries.get("manifest.json");
+        if(manifestBytes==null)throw new IllegalArgumentException("В пакете "+packId+" нет manifest.json.");
+        JSONObject manifest=new JSONObject(new String(manifestBytes,StandardCharsets.UTF_8));
+        if(!"lineup".equals(manifest.optString("format"))||manifest.optInt("schemaVersion",0)!=1)
+            throw new IllegalArgumentException("Неподдерживаемый формат пакета "+packId+".");
+        JSONArray data=manifest.optJSONArray("blocks");
+        if(data==null||data.length()>5000)throw new IllegalArgumentException("Неправильный список блоков в пакете "+packId+".");
+        for(int i=0;i<data.length();i++){
+            JSONObject item=data.getJSONObject(i);GuideBlock b=new GuideBlock();
+            b.id=item.optString("id",packId+"-"+i);
+            b.title=item.optString("title","Без названия");
+            b.map=item.optString("map","");b.category=item.optString("category","Раскидка");
+            b.side=item.optString("side","Любая сторона");b.description=item.optString("description","");
+            JSONArray photos=item.optJSONArray("photos");
+            if(photos!=null){
+                if(photos.length()>12)throw new IllegalArgumentException("В блоке больше 12 фото.");
+                for(int p=0;p<photos.length();p++){
+                    String file=photos.getJSONObject(p).optString("file","");
+                    if(!file.startsWith("images/")||file.contains(".."))throw new IllegalArgumentException("Неправильный путь фотографии.");
+                    byte[] image=entries.get(file);
+                    if(image==null||image.length==0||image.length>20*1024*1024)throw new IllegalArgumentException("В пакете отсутствует фотография "+file+".");
+                    String localKey=packId+"/"+file;
+                    b.photoFiles.add(localKey);target.images.put(localKey,image);
+                }
+            }
+            target.blocks.add(b);
+        }
+    }
+
+    private String sha256(byte[] bytes)throws Exception{
+        byte[] hash=MessageDigest.getInstance("SHA-256").digest(bytes);
+        StringBuilder out=new StringBuilder();
+        for(byte b:hash)out.append(String.format(Locale.ROOT,"%02x",b&255));
+        return out.toString();
+    }
+
+    private byte[] readFileLimited(java.io.File file,int max)throws Exception{
+        try(InputStream in=new java.io.FileInputStream(file)){return readLimited(in,max);}
+    }
+
+    private byte[] readLimited(InputStream in,int max)throws Exception{
+        ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buffer=new byte[32768];int total=0,n;
+        while((n=in.read(buffer))!=-1){total+=n;if(total>max)throw new IllegalArgumentException("Файл слишком большой.");out.write(buffer,0,n);}
+        return out.toByteArray();
+    }
+
     private void loadBundledContent(){
         blocks.clear();images.clear();
         try(InputStream raw=getAssets().open("community.lineup");ZipInputStream zip=new ZipInputStream(raw,StandardCharsets.UTF_8)){
