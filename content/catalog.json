@@ -1,6 +1,15 @@
 {
   "schemaVersion": 1,
-  "revision": 0,
-  "generatedAt": "2026-10-10T00:00:00Z",
-  "packs": []
+  "revision": 1,
+  "generatedAt": "2026-10-10T13:02:03+00:00",
+  "packs": [
+    {
+      "id": "community",
+      "title": "Lineup — база раскидок",
+      "version": 1791636937,
+      "file": "content/packs/community.lineup",
+      "sha256": "8f4637445ea92fff3cf34b106a9b5f49c5a5b6fd07f22aad43189cc45b84f083",
+      "size": 274
+    }
+  ]
 }
