@@ -2,6 +2,7 @@ package ru.selteck.lineup.client;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -14,9 +15,14 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.EditText;
+import android.widget.ArrayAdapter;
+import android.widget.Spinner;
+import android.widget.VideoView;
+import android.widget.MediaController;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -28,6 +34,8 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
@@ -46,7 +54,7 @@ public class ClientActivity extends Activity {
     private static final String POLICY_URL = "https://raw.githubusercontent.com/Selteck1/ApkGhostly/main/content/policy.json";
     private static final String CATALOG_URL = "https://raw.githubusercontent.com/Selteck1/ApkGhostly/main/content/catalog.json";
     private static final int BG=Color.rgb(10,14,27), SURFACE=Color.rgb(21,28,47), SURFACE2=Color.rgb(29,38,61);
-    private static final int FG=Color.rgb(241,244,255), MUTED=Color.rgb(158,170,197), PURPLE=Color.rgb(167,139,250), MINT=Color.rgb(77,226,197);
+    private static final int FG=Color.rgb(245,246,250), MUTED=Color.rgb(153,160,173), PURPLE=Color.rgb(255,207,48), MINT=Color.rgb(255,207,48);
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Runnable poll=new Runnable(){@Override public void run(){if(unlocked){checkPolicy(false);handler.postDelayed(this,60000L);}}};
@@ -56,14 +64,18 @@ public class ClientActivity extends Activity {
     private String telegramUrl="https://t.me/";
     private final List<GuideBlock> blocks=new ArrayList<>();
     private final Map<String,byte[]> images=new HashMap<>();
+    private final Map<String,byte[]> videos=new HashMap<>();
+    private String lastQuery="",filterCategory="Все категории",filterMap="Все карты",filterSide="Любая сторона",filterPlant="Любой плент",filterGrenade="Любая граната";
 
     private static final class GuideBlock {
-        String id,title,map,category,side,description;
+        String id,title,map,category,side,plant,grenadeType,description;
         final List<String> photoFiles=new ArrayList<>();
+        final List<String> videoFiles=new ArrayList<>();
     }
     private static final class RemoteContent {
         final List<GuideBlock> blocks=new ArrayList<>();
         final Map<String,byte[]> images=new HashMap<>();
+        final Map<String,byte[]> videos=new HashMap<>();
         long revision=0;
     }
 
@@ -89,7 +101,7 @@ public class ClientActivity extends Activity {
     private void shell(String title,String subtitle){
         root.removeAllViews();
         LinearLayout header=row();header.setPadding(dp(16),dp(10),dp(16),dp(10));header.setBackgroundColor(Color.rgb(9,13,24));
-        TextView logo=text("L",22,MINT,true);logo.setGravity(Gravity.CENTER);logo.setBackground(shape(SURFACE2,PURPLE,40));header.addView(logo,lp(42,42));
+        ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);header.addView(logo,lp(42,42));
         LinearLayout titles=column();titles.setPadding(dp(12),0,0,0);titles.addView(text(title,20,FG,true));titles.addView(text(subtitle,11,MUTED,false));
         header.addView(titles,new LinearLayout.LayoutParams(0,-2,1));root.addView(header,lp(-1,66));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);
@@ -167,6 +179,7 @@ public class ClientActivity extends Activity {
                 forceLocked=false;
                 blocks.clear();blocks.addAll(content.blocks);
                 images.clear();images.putAll(content.images);
+                videos.clear();videos.putAll(content.videos);
                 unlocked=true;if(refreshScreen)showList("");
             });
         });
@@ -240,7 +253,7 @@ public class ClientActivity extends Activity {
             b.id=item.optString("id",packId+"-"+i);
             b.title=item.optString("title","Без названия");
             b.map=item.optString("map","");b.category=item.optString("category","Раскидка");
-            b.side=item.optString("side","Любая сторона");b.description=item.optString("description","");
+            b.side=item.optString("side","Атака");b.plant=item.optString("plant","");b.grenadeType=item.optString("grenadeType","");b.description=item.optString("description","");
             JSONArray photos=item.optJSONArray("photos");
             if(photos!=null){
                 if(photos.length()>12)throw new IllegalArgumentException("В блоке больше 12 фото.");
@@ -251,6 +264,17 @@ public class ClientActivity extends Activity {
                     if(image==null||image.length==0||image.length>20*1024*1024)throw new IllegalArgumentException("В пакете отсутствует фотография "+file+".");
                     String localKey=packId+"/"+file;
                     b.photoFiles.add(localKey);target.images.put(localKey,image);
+                }
+            }
+            JSONArray videosArray=item.optJSONArray("videos");
+            if(videosArray!=null){
+                if(videosArray.length()>4)throw new IllegalArgumentException("В блоке больше 4 видео.");
+                for(int p=0;p<videosArray.length();p++){
+                    String file=videosArray.getJSONObject(p).optString("file","");
+                    if(!file.startsWith("videos/")||file.contains(".."))throw new IllegalArgumentException("Неправильный путь видео.");
+                    byte[] video=entries.get(file);
+                    if(video==null||video.length==0||video.length>40*1024*1024)throw new IllegalArgumentException("Видео отсутствует или слишком большое: "+file);
+                    String localKey=packId+"/"+file;b.videoFiles.add(localKey);target.videos.put(localKey,video);
                 }
             }
             target.blocks.add(b);
@@ -275,7 +299,7 @@ public class ClientActivity extends Activity {
     }
 
     private void loadBundledContent(){
-        blocks.clear();images.clear();
+        blocks.clear();images.clear();videos.clear();
         try(InputStream raw=getAssets().open("community.lineup");ZipInputStream zip=new ZipInputStream(raw,StandardCharsets.UTF_8)){
             Map<String,byte[]> entries=new HashMap<>();int total=0;ZipEntry entry;byte[] buffer=new byte[32768];
             while((entry=zip.getNextEntry())!=null){
@@ -294,63 +318,143 @@ public class ClientActivity extends Activity {
                 JSONObject item=data.getJSONObject(i);GuideBlock b=new GuideBlock();
                 b.id=item.optString("id","block-"+i);b.title=item.optString("title","Без названия");
                 b.map=item.optString("map","");b.category=item.optString("category","Раскидка");
-                b.side=item.optString("side","Любая сторона");b.description=item.optString("description","");
+                b.side=item.optString("side","Атака");b.plant=item.optString("plant","");b.grenadeType=item.optString("grenadeType","");b.description=item.optString("description","");
                 JSONArray photos=item.optJSONArray("photos");
                 if(photos!=null)for(int p=0;p<Math.min(photos.length(),12);p++){
                     String file=photos.getJSONObject(p).optString("file","");
                     if(file.startsWith("images/")&&entries.containsKey(file))b.photoFiles.add(file);
                 }
+                JSONArray vids=item.optJSONArray("videos");
+                if(vids!=null)for(int p=0;p<Math.min(vids.length(),4);p++){
+                    String file=vids.getJSONObject(p).optString("file","");
+                    if(file.startsWith("videos/")&&entries.containsKey(file)){b.videoFiles.add(file);videos.put(file,entries.get(file));}
+                }
                 blocks.add(b);
             }
             images.putAll(entries);
         }catch(Exception e){
-            blocks.clear();images.clear();
+            blocks.clear();images.clear();videos.clear();
         }
     }
 
     private void showList(String query){
         if(!unlocked){renderGate("Проверь актуальность базы перед просмотром.",null);return;}
-        shell("Блоки","ОБНОВЛЯЕМЫЙ КАТАЛОГ · v"+latestRevision);
-        addText("Тактики под рукой.",25,FG,true,2,5);
-        addText(blocks.size()+" блоков · "+images.size()+" файлов в базе",12,MUTED,false,0,14);
-        EditText search=field("Поиск по названию, карте или описанию",query);
-        addButton("Найти",()->showList(search.getText().toString().trim()),true);
-        if(blocks.isEmpty()){addCard(text("Пока нет опубликованных блоков. Материалы появятся после публикации администратором.",14,MUTED,false));return;}
-        String q=query==null?"":query.trim().toLowerCase(Locale.ROOT);int shown=0;
-        for(GuideBlock b:blocks){
-            String haystack=(b.title+" "+b.map+" "+b.category+" "+b.side+" "+b.description).toLowerCase(Locale.ROOT);
-            if(!q.isEmpty()&&!haystack.contains(q))continue;
-            addBlockCard(b);shown++;
-        }
-        if(shown==0)addCard(text("Ничего не найдено. Попробуй другой запрос.",14,MUTED,false));
+        lastQuery=query==null?"":query.trim();
+        shell("Lineup","СПРАВОЧНИК STANDOFF 2  ·  v"+latestRevision);
+        addText("Тактики под рукой.",27,FG,true,0,4);
+        addText("Свежие раскидки, схемы и видео — без лишнего шума.",13,MUTED,false,0,14);
+        EditText search=field("Найти по названию, карте или описанию",lastQuery);
+        addButton("⌕  Поиск",()->showList(search.getText().toString().trim()),true);
+        addButton("⚙  Фильтры"+(filtersActive()?" · включены":""),this::showFilterDialog,false);
+        addText("ПОСЛЕДНИЕ МАТЕРИАЛЫ",12,PURPLE,true,10,8);
+        int shown=0;
+        for(GuideBlock b:blocks){if(!matchesFilters(b,lastQuery))continue;addBlockCard(b);shown++;}
+        if(shown==0)addCard(text(blocks.isEmpty()?"Пока нет опубликованных материалов. Новые блоки появятся после публикации администратором.":"Ничего не найдено. Попробуй изменить запрос или фильтры.",14,MUTED,false));
+        else addText(shown+" материалов · прокручивай вниз до конца базы",11,MUTED,false,8,0);
+        addButton("Проверить обновления",()->checkPolicy(true),false);
+        addButton("Открыть Telegram",this::openTelegram,false);
+    }
+
+    private boolean filtersActive(){return !"Все категории".equals(filterCategory)||!"Все карты".equals(filterMap)||!"Любая сторона".equals(filterSide)||!"Любой плент".equals(filterPlant)||!"Любая граната".equals(filterGrenade);}
+    private boolean matchesFilters(GuideBlock b,String query){
+        String q=query==null?"":query.trim().toLowerCase(Locale.ROOT);
+        String hay=(safe(b.title)+" "+safe(b.map)+" "+safe(b.category)+" "+safe(b.side)+" "+safe(b.plant)+" "+safe(b.grenadeType)+" "+safe(b.description)).toLowerCase(Locale.ROOT);
+        if(!q.isEmpty()&&!hay.contains(q))return false;
+        if(!"Все категории".equals(filterCategory)&&!filterCategory.equalsIgnoreCase(safe(b.category)))return false;
+        if(!"Все карты".equals(filterMap)&&!filterMap.equalsIgnoreCase(safe(b.map)))return false;
+        if(!"Любая сторона".equals(filterSide)&&!filterSide.equalsIgnoreCase(safe(b.side)))return false;
+        if(!"Любой плент".equals(filterPlant)&&!filterPlant.equalsIgnoreCase(safe(b.plant)))return false;
+        if(!"Любая граната".equals(filterGrenade)&&!filterGrenade.equalsIgnoreCase(safe(b.grenadeType)))return false;
+        return true;
+    }
+    private String safe(String value){return value==null?"":value;}
+
+    private Spinner makeFilterSpinner(LinearLayout holder,String label,String[] values,String selected){
+        TextView title=text(label,12,MUTED,true);LinearLayout.LayoutParams tp=lp(-1,-2);tp.topMargin=dp(8);tp.bottomMargin=dp(4);holder.addView(title,tp);
+        Spinner spinner=new Spinner(this);
+        ArrayAdapter<String> adapter=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,values){
+            @Override public View getView(int position,View convertView,ViewGroup parent){TextView t=(TextView)super.getView(position,convertView,parent);t.setTextColor(FG);t.setTextSize(14);t.setPadding(dp(12),dp(6),dp(12),dp(6));return t;}
+            @Override public View getDropDownView(int position,View convertView,ViewGroup parent){TextView t=(TextView)super.getDropDownView(position,convertView,parent);t.setTextColor(FG);t.setTextSize(14);t.setBackgroundColor(SURFACE2);t.setPadding(dp(14),dp(12),dp(14),dp(12));return t;}
+        };
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);spinner.setAdapter(adapter);spinner.setBackground(shape(SURFACE2,Color.rgb(51,56,68),13));
+        for(int i=0;i<values.length;i++)if(values[i].equalsIgnoreCase(selected)){spinner.setSelection(i);break;}
+        LinearLayout.LayoutParams p=lp(-1,48);p.bottomMargin=dp(5);holder.addView(spinner,p);return spinner;
+    }
+
+    private void showFilterDialog(){
+        LinearLayout form=column();form.setPadding(dp(18),dp(8),dp(18),dp(6));
+        Spinner category=makeFilterSpinner(form,"Категория",new String[]{"Все категории","Раскидка","Тактика","Командная схема"},filterCategory);
+        Spinner map=makeFilterSpinner(form,"Карта",new String[]{"Все карты","Duna","Sandstone","Province","Prison","Rust","Hanami","Breeze"},filterMap);
+        Spinner side=makeFilterSpinner(form,"Сторона",new String[]{"Любая сторона","Атака","Оборона"},filterSide);
+        Spinner plant=makeFilterSpinner(form,"Плент",new String[]{"Любой плент","Плент A","Плент B"},filterPlant);
+        Spinner grenade=makeFilterSpinner(form,"Граната",new String[]{"Любая граната","Хае","Молотов","Флеш","Смок"},filterGrenade);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Фильтры материалов").setView(form).setNegativeButton("Отмена",null).setNeutralButton("Сбросить",null).setPositiveButton("Показать",null).create();
+        dialog.setOnShowListener(d->{
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(PURPLE);dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setTextColor(MUTED);dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(MUTED);
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+                filterCategory=category.getSelectedItem().toString();filterMap=map.getSelectedItem().toString();filterSide=side.getSelectedItem().toString();
+                filterPlant=plant.getSelectedItem().toString();filterGrenade=grenade.getSelectedItem().toString();dialog.dismiss();showList(lastQuery);
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{
+                filterCategory="Все категории";filterMap="Все карты";filterSide="Любая сторона";filterPlant="Любой плент";filterGrenade="Любая граната";dialog.dismiss();showList(lastQuery);
+            });
+        });
+        dialog.show();
     }
 
     private void addBlockCard(GuideBlock b){
-        LinearLayout content=column();LinearLayout titleRow=row();
-        TextView name=text(b.title,16,FG,true);titleRow.addView(name,new LinearLayout.LayoutParams(0,-2,1));
-        titleRow.addView(text("▧ "+b.photoFiles.size(),12,MINT,true));content.addView(titleRow);
-        TextView meta=text(join(b.map,b.category,b.side),11,PURPLE,true);LinearLayout.LayoutParams mp=lp(-1,-2);mp.topMargin=dp(6);content.addView(meta,mp);
-        TextView desc=text(b.description.isEmpty()?"Описание не добавлено":b.description,13,MUTED,false);desc.setMaxLines(2);
-        LinearLayout.LayoutParams dpv=lp(-1,-2);dpv.topMargin=dp(6);content.addView(desc,dpv);
+        LinearLayout content=column();
+        if(!b.photoFiles.isEmpty()){
+            byte[] bytes=images.get(b.photoFiles.get(0));
+            if(bytes!=null){Bitmap preview=decodeBytes(bytes,920,420);if(preview!=null){ImageView image=new ImageView(this);image.setImageBitmap(preview);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(shape(SURFACE2,0,14));LinearLayout.LayoutParams ip=lp(-1,168);ip.bottomMargin=dp(12);content.addView(image,ip);}}
+        }
+        LinearLayout titleRow=row();TextView name=text(b.title,16,FG,true);titleRow.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+        titleRow.addView(text("▧ "+b.photoFiles.size()+"  ▶ "+b.videoFiles.size(),11,PURPLE,true));content.addView(titleRow);
+        TextView meta=text(join(b.map,b.category,b.side,b.plant,b.grenadeType),11,PURPLE,true);LinearLayout.LayoutParams mp=lp(-1,-2);mp.topMargin=dp(6);content.addView(meta,mp);
+        TextView desc=text(b.description.isEmpty()?"Описание не добавлено":b.description,13,MUTED,false);desc.setMaxLines(3);LinearLayout.LayoutParams dpv=lp(-1,-2);dpv.topMargin=dp(8);content.addView(desc,dpv);
         addCard(content);content.setClickable(true);content.setOnClickListener(v->showDetail(b));
     }
-    private String join(String map,String category,String side){
-        ArrayList<String> list=new ArrayList<>();if(map!=null&&!map.trim().isEmpty())list.add(map.trim());
-        if(category!=null&&!category.trim().isEmpty())list.add(category.trim());if(side!=null&&!side.trim().isEmpty())list.add(side.trim());
-        return android.text.TextUtils.join("  ·  ",list);
-    }
+
+    private String join(String... values){ArrayList<String> list=new ArrayList<>();for(String value:values)if(value!=null&&!value.trim().isEmpty())list.add(value.trim());return android.text.TextUtils.join("  ·  ",list);}
+
     private void showDetail(GuideBlock b){
         if(!unlocked){renderGate("Эта версия приложения заблокирована.",null);return;}
-        shell(b.title,join(b.map,b.category,b.side));addText(b.description.isEmpty()?"Описание не добавлено.":b.description,15,FG,false,4,16);
-        if(b.photoFiles.isEmpty())addCard(text("Фотографии не добавлены.",13,MUTED,false));
-        int index=1;
-        for(String file:b.photoFiles){
-            byte[] bytes=images.get(file);if(bytes==null)continue;Bitmap bitmap=BitmapFactory.decodeByteArray(bytes,0,bytes.length);if(bitmap==null)continue;
-            ImageView image=new ImageView(this);image.setImageBitmap(bitmap);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setBackground(shape(SURFACE,0,14));
-            LinearLayout.LayoutParams p=lp(-1,-2);p.bottomMargin=dp(5);page.addView(image,p);
-            addText("Фото "+index,11,MUTED,false,0,11);index++;
+        shell(b.title,join(b.map,b.category,b.side,b.plant,b.grenadeType));
+        addText(b.description.isEmpty()?"Описание не добавлено.":b.description,15,FG,false,4,16);
+        if(!b.photoFiles.isEmpty()){
+            addText("ФОТО · "+b.photoFiles.size(),12,PURPLE,true,0,9);int index=1;
+            for(String file:b.photoFiles){byte[] bytes=images.get(file);if(bytes==null)continue;Bitmap bitmap=decodeBytes(bytes,1800,1800);if(bitmap==null)continue;
+                ImageView image=new ImageView(this);image.setImageBitmap(bitmap);image.setAdjustViewBounds(true);image.setScaleType(ImageView.ScaleType.FIT_CENTER);image.setBackground(shape(SURFACE,0,14));
+                LinearLayout.LayoutParams p=lp(-1,-2);p.bottomMargin=dp(5);page.addView(image,p);image.setOnClickListener(v->showImageFull(bytes));
+                addText("Фото "+index+" · нажми, чтобы увеличить",11,MUTED,false,0,11);index++;
+            }
+        }else addCard(text("Фотографии не добавлены.",13,MUTED,false));
+        if(!b.videoFiles.isEmpty()){
+            addText("ВИДЕО · "+b.videoFiles.size(),12,PURPLE,true,12,9);int index=1;
+            for(String file:b.videoFiles){byte[] bytes=videos.get(file);if(bytes==null)continue;addText("▶ Ролик "+index,13,FG,true,0,5);
+                VideoView player=new VideoView(this);player.setBackground(shape(SURFACE2,0,13));LinearLayout.LayoutParams p=lp(-1,224);p.bottomMargin=dp(14);page.addView(player,p);
+                try{File fileOnDisk=cacheVideo(bytes,file);player.setVideoURI(Uri.fromFile(fileOnDisk));MediaController controls=new MediaController(this);controls.setAnchorView(player);player.setMediaController(controls);}
+                catch(Exception ex){addText("Не удалось подготовить видео для воспроизведения.",12,Color.rgb(255,130,150),false,0,8);}index++;
+            }
         }
-        addButton("← К блокам",()->showList(""),false);
+        addButton("← Назад к материалам",()->showList(lastQuery),false);
+    }
+
+    private Bitmap decodeBytes(byte[] bytes,int reqW,int reqH){
+        try{BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(bytes,0,bytes.length,bounds);int sample=1;while(bounds.outWidth/sample>reqW||bounds.outHeight/sample>reqH)sample*=2;BitmapFactory.Options opts=new BitmapFactory.Options();opts.inSampleSize=sample;opts.inPreferredConfig=Bitmap.Config.RGB_565;return BitmapFactory.decodeByteArray(bytes,0,bytes.length,opts);}catch(Throwable ignored){return null;}
+    }
+
+    private void showImageFull(byte[] bytes){
+        Bitmap bitmap=decodeBytes(bytes,2400,2400);if(bitmap==null)return;
+        Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);ImageView image=new ImageView(this);
+        image.setBackgroundColor(Color.BLACK);image.setImageBitmap(bitmap);image.setScaleType(ImageView.ScaleType.FIT_CENTER);dialog.setContentView(image);image.setOnClickListener(v->dialog.dismiss());dialog.show();
+        if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawableResource(android.R.color.black);dialog.getWindow().setLayout(-1,-1);}
+    }
+
+    private File cacheVideo(byte[] bytes,String name)throws Exception{
+        File dir=new File(getCacheDir(),"lineup_videos");if(!dir.isDirectory()&&!dir.mkdirs())throw new IllegalStateException("Не удалось создать видеокеш");
+        String ext=".mp4";if(name!=null){String lower=name.toLowerCase(Locale.ROOT);if(lower.endsWith(".webm"))ext=".webm";else if(lower.endsWith(".mov"))ext=".mov";else if(lower.endsWith(".3gp"))ext=".3gp";}
+        File f=new File(dir,sha256(bytes)+ext);if(!f.isFile())try(FileOutputStream out=new FileOutputStream(f)){out.write(bytes);}return f;
     }
 
     private void openTelegram(){
