@@ -39,8 +39,8 @@ import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 public class KemtizActivity extends Activity {
-    private static final String API = "https://kemtiz-api.onrender.com";
-    private static final String WS = "wss://kemtiz-api.onrender.com/ws";
+    private static final String DEFAULT_API = "https://kemtiz-api.onrender.com";
+    private static final String SERVER_PREF = "server_base";
     private static final int BG = Color.rgb(10, 11, 17);
     private static final int SURFACE = Color.rgb(21, 22, 32);
     private static final int PANEL = Color.rgb(31, 30, 45);
@@ -56,6 +56,8 @@ public class KemtizActivity extends Activity {
         .connectTimeout(25, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(25, TimeUnit.SECONDS).pingInterval(25, TimeUnit.SECONDS).build();
     private SharedPreferences prefs;
+    private String serverBase = DEFAULT_API;
+    private EditText serverUrlField;
     private String token = "";
     private JSONObject me;
     private JSONObject currentChat;
@@ -72,6 +74,8 @@ public class KemtizActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         prefs = getSharedPreferences("kemtiz", MODE_PRIVATE);
+        serverBase = normalizeServerBase(prefs.getString(SERVER_PREF, DEFAULT_API));
+        if (serverBase.isEmpty()) serverBase = DEFAULT_API;
         token = prefs.getString("token", "");
         if (token.isEmpty()) { login(""); return; }
         api("GET", "/api/me", null, (data, error) -> {
@@ -220,6 +224,22 @@ public class KemtizActivity extends Activity {
 
         TextView footer = text("Данные передаются по защищённому соединению.", 11, MUTED, Gravity.CENTER);
         content.addView(footer, topMargin(match(), 17));
+
+        TextView serverHeading = text("СВОЙ СЕРВЕР", 10, ACCENT, Gravity.START);
+        serverHeading.setTypeface(Typeface.DEFAULT_BOLD);
+        content.addView(serverHeading, topMargin(match(), 22));
+        content.addView(text(
+            "Для сервера на ПК вставь сюда HTTPS-ссылку из окна Cloudflare Tunnel.",
+            11, MUTED, Gravity.START), topMargin(match(), 5));
+        serverUrlField = field("https://твой-сервер.trycloudflare.com");
+        serverUrlField.setSingleLine(true);
+        serverUrlField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        serverUrlField.setText(serverBase);
+        content.addView(serverUrlField, topMargin(match(), 7));
+        Button saveServer = button("Сохранить и проверить сервер", false);
+        content.addView(saveServer, topMargin(match(), 7));
+        saveServer.setOnClickListener(v -> saveAndCheckServer());
+
         setContentView(root);
     }
 
@@ -607,9 +627,65 @@ public class KemtizActivity extends Activity {
     }
 
     // WebSocket events
+    private String websocketUrl() {
+        if (serverBase.startsWith("https://")) return "wss://" + serverBase.substring(8) + "/ws";
+        if (serverBase.startsWith("http://")) return "ws://" + serverBase.substring(7) + "/ws";
+        return serverBase + "/ws";
+    }
+
+    private String normalizeServerBase(String value) {
+        if (value == null) return "";
+        String base = value.trim();
+        if (base.isEmpty()) return "";
+        if (!base.startsWith("https://") && !base.startsWith("http://")) base = "https://" + base;
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        android.net.Uri uri = android.net.Uri.parse(base);
+        String scheme = uri.getScheme();
+        if (uri.getHost() == null || uri.getHost().trim().isEmpty()
+            || !("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme))
+            || uri.getQuery() != null || uri.getFragment() != null
+            || (uri.getPath() != null && !uri.getPath().isEmpty() && !"/".equals(uri.getPath()))) {
+            return "";
+        }
+        return base;
+    }
+
+    private void saveAndCheckServer() {
+        String candidate = normalizeServerBase(serverUrlField == null ? "" : serverUrlField.getText().toString());
+        if (candidate.isEmpty()) {
+            if (serverUrlField != null) serverUrlField.setError("Введи полный адрес, например https://name.trycloudflare.com");
+            return;
+        }
+        serverBase = candidate;
+        prefs.edit().putString(SERVER_PREF, serverBase).apply();
+        toast("Адрес сохранён. Проверяю API…");
+        api("GET", "/health", null, (data, error) -> {
+            if (error != null) {
+                authError.setText("Сервер недоступен: " + error);
+                authError.setVisibility(View.VISIBLE);
+                return;
+            }
+            if (data instanceof JSONObject) {
+                JSONObject health = (JSONObject) data;
+                if (health.optBoolean("password_auth", false)) {
+                    toast("Сервер Kemtiz доступен. Можно регистрироваться.");
+                    if (authError != null) authError.setVisibility(View.GONE);
+                } else {
+                    String version = health.optString("api_version", "неизвестна");
+                    authError.setText("Сервер отвечает, но версия API устарела (" + version
+                        + "). Запусти новый серверный пакет Kemtiz на ПК.");
+                    authError.setVisibility(View.VISIBLE);
+                }
+            } else {
+                authError.setText("Сервер ответил в неизвестном формате.");
+                authError.setVisibility(View.VISIBLE);
+            }
+        });
+    }
+
     private void socket(){
         closeSocket();if(token.isEmpty())return;
-        socket=http.newWebSocket(new Request.Builder().url(WS).build(),new WebSocketListener(){
+        socket=http.newWebSocket(new Request.Builder().url(websocketUrl()).build(),new WebSocketListener(){
             @Override public void onOpen(WebSocket ws,Response response){ws.send(obj("type","auth","token",token).toString());}
             @Override public void onMessage(WebSocket ws,String text){
                 try{
@@ -636,8 +712,8 @@ public class KemtizActivity extends Activity {
     private String apiError(Object parsed, int status, String path) {
         if (status == 404 && path.startsWith("/api/auth/password/")) {
             String action = path.endsWith("/register") ? "регистрации" : "входа";
-            return "На сервере Kemtiz не найден маршрут " + action
-                + ". Render ещё не обновлён: нужно развернуть папку kemtiz из ApkGhostly.";
+            return "На выбранном сервере нет маршрута " + action
+                + ". Запусти последнюю версию Kemtiz API и проверь адрес сервера.";
         }
 
         String fallback = "Ошибка " + status;
@@ -664,14 +740,14 @@ public class KemtizActivity extends Activity {
     }
 
     private void api(String method,String path,JSONObject body,Result callback){
-        Request.Builder b=new Request.Builder().url(API+path);
+        Request.Builder b=new Request.Builder().url(serverBase+path);
         if(!token.isEmpty())b.header("Authorization","Bearer "+token);
         if("POST".equals(method))b.post(RequestBody.create(JSON,body==null?"{}":body.toString()));else b.get();
         http.newCall(b.build()).enqueue(new Callback(){
             @Override public void onFailure(Call call,IOException e){
                 String message = e instanceof java.net.SocketTimeoutException
-                    ? "Сервер долго отвечает. Бесплатный Render может запускаться до минуты — нажми ещё раз."
-                    : "Нет соединения с сервером. Проверь интернет и повтори попытку.";
+                    ? "Сервер долго отвечает. Проверь, что сервер запущен на ПК и окно туннеля открыто."
+                    : "Нет соединения. Проверь интернет, адрес сервера и запущен ли туннель.";
                 main.post(()->callback.done(null,message));
             }
             @Override public void onResponse(Call call,Response response)throws IOException{
