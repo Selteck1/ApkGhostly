@@ -45,7 +45,7 @@ import org.webrtc.PeerConnectionFactory;
 import org.webrtc.RtpReceiver;
 import org.webrtc.SdpObserver;
 import org.webrtc.SessionDescription;
-import org.webrtc.TextureViewRenderer;
+import org.webrtc.SurfaceViewRenderer;
 import org.webrtc.SurfaceTextureHelper;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
@@ -99,8 +99,8 @@ public class CallActivity extends Activity {
     private AudioManager audioManager;
     private FrameLayout frame;
     private FrameLayout localTile;
-    private TextureViewRenderer remoteRenderer;
-    private TextureViewRenderer localRenderer;
+    private SurfaceViewRenderer remoteRenderer;
+    private SurfaceViewRenderer localRenderer;
     private TextView remotePlaceholder;
     private TextView localPlaceholder;
     private TextView statusView;
@@ -159,7 +159,7 @@ public class CallActivity extends Activity {
     private void createUi() {
         frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
-        remoteRenderer = new TextureViewRenderer(this);
+        remoteRenderer = new SurfaceViewRenderer(this);
         remoteRenderer.setBackgroundColor(Color.BLACK);
         frame.addView(remoteRenderer, new FrameLayout.LayoutParams(-1, -1));
 
@@ -178,8 +178,11 @@ public class CallActivity extends Activity {
         tileBackground.setStroke(dp(1), Color.rgb(139, 116, 205));
         localTile.setBackground(tileBackground);
         localTile.setClipToOutline(true);
-        localRenderer = new TextureViewRenderer(this);
+        localRenderer = new SurfaceViewRenderer(this);
         localRenderer.setBackgroundColor(Color.rgb(24, 24, 34));
+        // SurfaceView video outputs need an explicit ordering so the self-view is above
+        // the full-screen remote renderer on devices with separate compositor surfaces.
+        localRenderer.setZOrderMediaOverlay(true);
         localTile.addView(localRenderer, new FrameLayout.LayoutParams(-1, -1));
 
         localPlaceholder = new TextView(this);
@@ -661,7 +664,7 @@ public class CallActivity extends Activity {
                     remoteVideoAttached = true;
                     status("Видеодорожка собеседника получена, ждём первый кадр…");
                 }
-                // Keep the waiting layer until TextureViewRenderer actually renders a frame.
+                // Keep the waiting layer until SurfaceViewRenderer actually renders a frame.
                 refreshMediaStatus();
             }
         });
