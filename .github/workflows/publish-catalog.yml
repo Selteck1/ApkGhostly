@@ -1,11 +1,9 @@
 name: Publish content catalog
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'content/packs/*.lineup'
-      - 'scripts/build_catalog.py'
+  # Content publication is handled by Lineup-Publish.bat, which commits the
+  # package, catalog, and policy atomically. Keep this workflow manual to avoid
+  # racing a second catalog commit against that publication.
   workflow_dispatch:
 
 permissions:
@@ -25,12 +23,12 @@ jobs:
         run: python scripts/build_catalog.py
       - name: Commit if changed
         run: |
-          if git diff --quiet -- content/catalog.json; then
-            echo "Catalog already up to date"
+          if git diff --quiet -- content/catalog.json content/policy.json; then
+            echo "Catalog and policy already up to date"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add content/catalog.json
+          git add content/catalog.json content/policy.json
           git commit -m "Update Lineup content catalog"
-          git push
+          git push origin HEAD:main
