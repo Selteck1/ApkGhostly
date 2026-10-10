@@ -2,6 +2,7 @@ package ru.selteck.lineup;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -14,6 +15,7 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.ImageView;
@@ -47,7 +49,7 @@ public class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
 
     @Override protected void onCreate(Bundle state){super.onCreate(state);Window w=getWindow();w.setStatusBarColor(Color.rgb(9,13,24));w.setNavigationBarColor(Color.rgb(9,13,24));w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        db=new AppDb(this);prefs=getSharedPreferences("lineup_settings",MODE_PRIVATE);root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);setContentView(root);showHome();}
+        db=new AppDb(this);prefs=getSharedPreferences("lineup_settings",MODE_PRIVATE);root=new InsetRoot(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);setContentView(root);showHome();}
     @Override protected void onDestroy(){worker.shutdownNow();db.close();super.onDestroy();}
     private int dp(float v){return(int)(v*getResources().getDisplayMetrics().density+0.5f);}
     private LinearLayout.LayoutParams lp(int w,int h){return new LinearLayout.LayoutParams(w<0?w:dp(w),h<0?h:dp(h));}
@@ -126,4 +128,12 @@ public class MainActivity extends Activity {
             else new AlertDialog.Builder(this).setTitle("Обновление готово").setMessage("Загружено пакетов: "+p+"\nОбработано блоков: "+b+"\nМатериалы доступны офлайн.").setPositiveButton("Открыть",(d,w)->showHome()).show();});});}
     private byte[] download(String address,int max)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection();c.setRequestMethod("GET");c.setConnectTimeout(12000);c.setReadTimeout(20000);c.setInstanceFollowRedirects(true);c.setRequestProperty("User-Agent","Lineup-Android/1.0");
         try{int status=c.getResponseCode();if(status<200||status>=300)throw new IllegalStateException("Сервер вернул HTTP "+status);try(InputStream in=c.getInputStream()){return PackManager.readLimited(in,max);}}finally{c.disconnect();}}
+
+    private final class InsetRoot extends LinearLayout {
+        InsetRoot(Context context) { super(context); }
+        @Override public WindowInsets onApplyWindowInsets(WindowInsets insets) {
+            setPadding(0, insets.getSystemWindowInsetTop(), 0, insets.getSystemWindowInsetBottom());
+            return insets.consumeSystemWindowInsets();
+        }
+    }
 }
