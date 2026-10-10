@@ -1,3 +1,4 @@
+// User-facing APK: published guide content is embedded by scripts/prepare_client_assets.py.
 plugins {
     id 'com.android.application'
 }
