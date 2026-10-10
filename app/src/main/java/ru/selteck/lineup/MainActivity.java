@@ -12,6 +12,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.Window;
@@ -34,6 +36,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -47,10 +51,15 @@ public class MainActivity extends Activity {
     private AppDb db;private SharedPreferences prefs;private LinearLayout root,page;private ScrollView scroll;private boolean adminSession=false;
     private Block draft;private ArrayList<String> draftPhotos=new ArrayList<>();private EditText edTitle,edMap,edCategory,edSide,edDescription;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private volatile boolean databaseUnlocked=false, checkingUpdates=false, checkingRevision=false;
+    private final Handler gateHandler=new Handler(Looper.getMainLooper());
+    private final Runnable gatePoll=new Runnable(){@Override public void run(){if(!databaseUnlocked)return;pollCatalogRevision();gateHandler.postDelayed(this,60000L);}};
 
     @Override protected void onCreate(Bundle state){super.onCreate(state);Window w=getWindow();w.setStatusBarColor(Color.rgb(9,13,24));w.setNavigationBarColor(Color.rgb(9,13,24));w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        db=new AppDb(this);prefs=getSharedPreferences("lineup_settings",MODE_PRIVATE);root=new InsetRoot(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);setContentView(root);showHome();}
-    @Override protected void onDestroy(){worker.shutdownNow();db.close();super.onDestroy();}
+        db=new AppDb(this);prefs=getSharedPreferences("lineup_settings",MODE_PRIVATE);root=new InsetRoot(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);setContentView(root);showUpdateGate("Проверяю, опубликована ли новая версия базы…",null);checkUpdates(true);}
+    @Override protected void onResume(){super.onResume();if(databaseUnlocked){gateHandler.removeCallbacks(gatePoll);gateHandler.postDelayed(gatePoll,15000L);}}
+    @Override protected void onPause(){gateHandler.removeCallbacks(gatePoll);super.onPause();}
+    @Override protected void onDestroy(){gateHandler.removeCallbacks(gatePoll);worker.shutdownNow();db.close();super.onDestroy();}
     private int dp(float v){return(int)(v*getResources().getDisplayMetrics().density+0.5f);}
     private LinearLayout.LayoutParams lp(int w,int h){return new LinearLayout.LayoutParams(w<0?w:dp(w),h<0?h:dp(h));}
     private GradientDrawable shape(int color,int border,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));if(border!=0)d.setStroke(dp(1),border);return d;}
@@ -116,17 +125,117 @@ public class MainActivity extends Activity {
     private String copyPhoto(Uri uri){InputStream in=null;try{File dir=new File(getFilesDir(),"lineup_images");if(!dir.exists()&&!dir.mkdirs())return null;String mime=getContentResolver().getType(uri);String ext=mime!=null&&mime.toLowerCase(Locale.ROOT).contains("png")?".png":mime!=null&&mime.toLowerCase(Locale.ROOT).contains("webp")?".webp":".jpg";File target=new File(dir,java.util.UUID.randomUUID().toString()+ext);in=getContentResolver().openInputStream(uri);if(in==null)return null;
         try(FileOutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[32768];int total=0,read;while((read=in.read(buffer))!=-1){total+=read;if(total>20*1024*1024){target.delete();throw new IllegalArgumentException("Фото не должно превышать 20 МБ");}out.write(buffer,0,read);}}return target.getAbsolutePath();
     }catch(Exception e){Toast.makeText(this,"Не удалось добавить фото: "+e.getMessage(),Toast.LENGTH_LONG).show();return null;}finally{try{if(in!=null)in.close();}catch(Exception ignored){}}}
-    private void checkUpdates(){Toast.makeText(this,"Проверяю каталог…",Toast.LENGTH_SHORT).show();worker.execute(()->{int packsDone=0,blocksDone=0;String error=null;try{
-        JSONObject catalog=new JSONObject(new String(download(CATALOG_URL,2*1024*1024),StandardCharsets.UTF_8));JSONArray packs=catalog.optJSONArray("packs");if(packs==null)packs=new JSONArray();
-        for(int i=0;i<packs.length();i++){JSONObject item=packs.getJSONObject(i);String id=item.optString("id",""),file=item.optString("file",""),expected=item.optString("sha256","").toLowerCase(Locale.ROOT);if(id.isEmpty()||file.isEmpty())continue;
-            if(!expected.matches("[0-9a-f]{64}"))throw new IllegalArgumentException("Неправильная контрольная сумма пакета "+id);if(expected.equals(prefs.getString("pack_hash_"+id,"")))continue;
-            String url=file.startsWith("https://")?file:"https://raw.githubusercontent.com/Selteck1/ApkGhostly/main/"+file.replace(" ","%20");byte[] content=download(url,128*1024*1024);if(!expected.equals(PackManager.sha256(content)))throw new IllegalArgumentException("Контрольная сумма не совпала для "+id);
-            int n=PackManager.importBytes(this,db,content);prefs.edit().putString("pack_hash_"+id,expected).apply();packsDone++;blocksDone+=n;}
-    }catch(Exception e){error=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();}
-        final int p=packsDone,b=blocksDone;final String err=error;runOnUiThread(()->{if(err!=null)new AlertDialog.Builder(this).setTitle("Не удалось обновить базу").setMessage(err+"\n\nПроверь подключение. Уже сохранённые материалы остаются на устройстве.").setPositiveButton("Понятно",null).show();
-            else if(p==0){Toast.makeText(this,"Новых пакетов нет. База готова к работе офлайн.",Toast.LENGTH_LONG).show();showHome();}
-            else new AlertDialog.Builder(this).setTitle("Обновление готово").setMessage("Загружено пакетов: "+p+"\nОбработано блоков: "+b+"\nМатериалы доступны офлайн.").setPositiveButton("Открыть",(d,w)->showHome()).show();});});}
-    private byte[] download(String address,int max)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection();c.setRequestMethod("GET");c.setConnectTimeout(12000);c.setReadTimeout(20000);c.setInstanceFollowRedirects(true);c.setRequestProperty("User-Agent","Lineup-Android/1.0");
+    private void showUpdateGate(String message,String error) {
+        databaseUnlocked=false;
+        shell("База данных","ОБЯЗАТЕЛЬНАЯ СИНХРОНИЗАЦИЯ",false,null);
+        addText("Обновление перед входом",22,FG,true,4,8);
+        addText("Перед просмотром блоков нужно проверить онлайн-версию базы и установить все обязательные изменения. После загрузки фотографии и описания сохраняются на устройстве.",14,MUTED,false,0,16);
+        addCard(text(message,14,error==null?MINT:Color.rgb(255,130,150),true));
+        if(error!=null)addText(error,13,Color.rgb(255,160,170),false,4,12);
+        addButton(checkingUpdates?"Проверка выполняется…":"Проверить и обновить базу",()->checkUpdates(true),true);
+        addText("Для проверки и скачивания нужна сеть. Если сервер опубликовал новую версию, открыть материалы до её загрузки нельзя.",11,MUTED,false,12,0);
+    }
+
+    private void checkUpdates(){checkUpdates(true);}
+
+    private void checkUpdates(boolean requiredGate){
+        if(checkingUpdates)return;
+        checkingUpdates=true;
+        databaseUnlocked=false;
+        showUpdateGate("Подключаюсь к каталогу и проверяю версию базы…",null);
+        worker.execute(()->{
+            int packsDone=0,blocksDone=0;
+            long revision=-1;
+            String error=null;
+            try{
+                String catalogUrl=CATALOG_URL+"?nocache="+System.currentTimeMillis();
+                JSONObject catalog=new JSONObject(new String(download(catalogUrl,2*1024*1024),StandardCharsets.UTF_8));
+                if(catalog.optInt("schemaVersion",0)!=1)throw new IllegalArgumentException("Версия каталога не поддерживается. Обнови приложение.");
+                revision=catalog.optLong("revision",-1);
+                if(revision<0)throw new IllegalArgumentException("На сервере ещё не опубликована версия базы. Повтори проверку позже.");
+                long installedRevision=prefs.getLong("synced_revision",-1);
+                if(revision<installedRevision)throw new IllegalArgumentException("Сервер вернул старую версию базы. Изменения не применены.");
+
+                JSONArray packs=catalog.optJSONArray("packs");
+                if(packs==null)packs=new JSONArray();
+                Set<String> activeIds=new HashSet<>();
+                for(int i=0;i<packs.length();i++){
+                    JSONObject item=packs.getJSONObject(i);
+                    String id=item.optString("id",""),file=item.optString("file",""),expected=item.optString("sha256","").toLowerCase(Locale.ROOT);
+                    if(!id.matches("[A-Za-z0-9_-]{1,100}"))throw new IllegalArgumentException("Неправильный ID пакета в каталоге.");
+                    if(!file.startsWith("content/packs/")||file.contains(".."))throw new IllegalArgumentException("Каталог содержит недопустимый путь пакета.");
+                    activeIds.add(id);
+                    if(!expected.matches("[0-9a-f]{64}"))throw new IllegalArgumentException("Неправильная контрольная сумма пакета "+id);
+                    if(expected.equals(prefs.getString("pack_hash_"+id,"")))continue;
+                    String address="https://raw.githubusercontent.com/Selteck1/ApkGhostly/main/"+file.replace(" ","%20");
+                    byte[] packageBytes=download(address+"?nocache="+System.currentTimeMillis(),128*1024*1024);
+                    if(!expected.equals(PackManager.sha256(packageBytes)))throw new IllegalArgumentException("Проверка целостности не прошла для пакета "+id+". Повтори скачивание.");
+                    int count=PackManager.importBytes(this,db,packageBytes);
+                    prefs.edit().putString("pack_hash_"+id,expected).apply();
+                    packsDone++;
+                    blocksDone+=count;
+                }
+
+                // Remove downloaded packs that were explicitly removed from the published catalog.
+                SharedPreferences.Editor cleanup=prefs.edit();
+                for(String key:prefs.getAll().keySet()){
+                    if(key.startsWith("pack_hash_")){
+                        String oldId=key.substring("pack_hash_".length());
+                        if(!activeIds.contains(oldId)){
+                            db.deleteMissingFromPack(oldId,new HashSet<>());
+                            cleanup.remove(key);
+                        }
+                    }
+                }
+                cleanup.putLong("synced_revision",revision).apply();
+            }catch(Exception e){
+                error=e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();
+            }
+            final int completedPacks=packsDone,completedBlocks=blocksDone;
+            final long completedRevision=revision;
+            final String failure=error;
+            runOnUiThread(()->{
+                checkingUpdates=false;
+                if(failure!=null){
+                    databaseUnlocked=false;
+                    showUpdateGate("Не удалось завершить синхронизацию базы.",failure+"\n\nИнтернет нужен для проверки и загрузки обязательного обновления. Локальная база не будет открыта до успешной проверки.");
+                    return;
+                }
+                databaseUnlocked=true;
+                gateHandler.removeCallbacks(gatePoll);
+                gateHandler.postDelayed(gatePoll,60000L);
+                showHome();
+                if(completedPacks>0){
+                    Toast.makeText(this,"База обновлена до версии "+completedRevision+". Пакетов: "+completedPacks+", блоков: "+completedBlocks+".",Toast.LENGTH_LONG).show();
+                }else{
+                    Toast.makeText(this,"База проверена. Установлена актуальная версия "+completedRevision+".",Toast.LENGTH_LONG).show();
+                }
+            });
+        });
+    }
+
+    private void pollCatalogRevision(){
+        if(!databaseUnlocked||checkingUpdates||checkingRevision)return;
+        checkingRevision=true;
+        worker.execute(()->{
+            boolean newer=false;
+            try{
+                String url=CATALOG_URL+"?nocache="+System.currentTimeMillis();
+                JSONObject catalog=new JSONObject(new String(download(url,2*1024*1024),StandardCharsets.UTF_8));
+                long remote=catalog.optLong("revision",-1);
+                long installed=prefs.getLong("synced_revision",-1);
+                newer=remote>=0&&remote>installed;
+            }catch(Exception ignored){
+                // If the internet is temporarily unavailable during an active session,
+                // already downloaded materials remain available locally.
+            }finally{
+                checkingRevision=false;
+            }
+            if(newer)runOnUiThread(()->{if(databaseUnlocked)checkUpdates(true);});
+        });
+    }
+
+    private byte[] download(String address,int max)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection();c.setRequestMethod("GET");c.setConnectTimeout(12000);c.setReadTimeout(20000);c.setInstanceFollowRedirects(true);c.setRequestProperty("User-Agent","Lineup-Android/1.0");c.setUseCaches(false);c.setRequestProperty("Cache-Control","no-cache");
         try{int status=c.getResponseCode();if(status<200||status>=300)throw new IllegalStateException("Сервер вернул HTTP "+status);try(InputStream in=c.getInputStream()){return PackManager.readLimited(in,max);}}finally{c.disconnect();}}
 
     private final class InsetRoot extends LinearLayout {
