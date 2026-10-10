@@ -9,6 +9,7 @@ from typing import Any
 import requests
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from urllib.parse import urlparse
 
 app = FastAPI(title="Lineup Content Publisher", version="1.0.0")
 GITHUB_API = "https://api.github.com"
@@ -110,6 +111,113 @@ def health() -> dict[str, Any]:
         "githubConfigured": bool(token) and not token.startswith("SET_"),
         "adminConfigured": bool(admin) and not admin.startswith("SET_"),
     }
+
+
+
+def get_github_file(path: str) -> tuple[dict[str, Any] | None, str | None]:
+    url = f"{GITHUB_API}/repos/{REPO}/contents/{path}"
+    response = github_request("GET", url, params={"ref": BRANCH})
+    if response.status_code == 404:
+        return None, None
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Could not read {path} (HTTP {response.status_code}).")
+    try:
+        info = response.json()
+        raw = base64.b64decode(info["content"])
+        return json.loads(raw.decode("utf-8")), info["sha"]
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not parse {path}: {exc}") from exc
+
+
+def put_github_json(path: str, document: dict[str, Any], message: str, sha: str | None) -> None:
+    url = f"{GITHUB_API}/repos/{REPO}/contents/{path}"
+    payload: dict[str, Any] = {
+        "message": message,
+        "content": base64.b64encode((json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8")).decode("ascii"),
+        "branch": BRANCH,
+    }
+    if sha:
+        payload["sha"] = sha
+    response = github_request("PUT", url, json=payload)
+    if response.status_code not in (200, 201):
+        try:
+            detail = response.json().get("message", "GitHub rejected the update.")
+        except ValueError:
+            detail = "GitHub rejected the update."
+        raise HTTPException(status_code=502, detail=detail)
+
+
+DEFAULT_POLICY: dict[str, Any] = {
+    "schemaVersion": 1,
+    "minClientRevision": 0,
+    "telegramUrl": "https://t.me/",
+}
+
+
+@app.get("/policy")
+def read_policy() -> dict[str, Any]:
+    document, _ = get_github_file("content/policy.json")
+    policy = document if isinstance(document, dict) else dict(DEFAULT_POLICY)
+    policy.setdefault("schemaVersion", 1)
+    policy.setdefault("minClientRevision", 0)
+    policy.setdefault("telegramUrl", "https://t.me/")
+    return policy
+
+
+@app.post("/policy/lock")
+async def lock_previous_versions(
+    request: Request,
+    x_lineup_admin_key: str | None = Header(default=None),
+) -> JSONResponse:
+    check_admin(x_lineup_admin_key)
+    catalog, catalog_sha = get_github_file("content/catalog.json")
+    if not isinstance(catalog, dict) or not catalog_sha:
+        raise HTTPException(status_code=409, detail="Catalog has not been initialized yet.")
+    policy, policy_sha = get_github_file("content/policy.json")
+    if not isinstance(policy, dict):
+        policy = dict(DEFAULT_POLICY)
+
+    revision = max(0, int(catalog.get("revision", 0)))
+    minimum = max(0, int(policy.get("minClientRevision", 0)))
+    if revision <= minimum:
+        revision += 1
+        catalog["revision"] = revision
+        catalog["generatedAt"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).replace(microsecond=0).isoformat()
+        put_github_json("content/catalog.json", catalog, f"Bump Lineup revision to lock previous app versions (revision {revision})", catalog_sha)
+
+    policy["schemaVersion"] = 1
+    policy["minClientRevision"] = revision
+    policy.setdefault("telegramUrl", "https://t.me/")
+    put_github_json("content/policy.json", policy, f"Require Lineup client database revision {revision}", policy_sha)
+    return JSONResponse({
+        "ok": True,
+        "minClientRevision": revision,
+        "message": "Previous client revisions will show the update screen. A client APK for this revision is built by GitHub Actions.",
+    })
+
+
+@app.post("/policy/telegram")
+async def set_telegram_update_link(
+    request: Request,
+    x_lineup_admin_key: str | None = Header(default=None),
+) -> JSONResponse:
+    check_admin(x_lineup_admin_key)
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+    link = str(body.get("telegramUrl", "")).strip() if isinstance(body, dict) else ""
+    parsed = urlparse(link)
+    if len(link) > 500 or parsed.scheme != "https" or parsed.netloc.lower() not in {"t.me", "www.t.me", "telegram.me", "www.telegram.me"}:
+        raise HTTPException(status_code=400, detail="Update link must be a Telegram HTTPS URL such as https://t.me/your_channel.")
+    policy, sha = get_github_file("content/policy.json")
+    if not isinstance(policy, dict):
+        policy = dict(DEFAULT_POLICY)
+    policy["schemaVersion"] = 1
+    policy["minClientRevision"] = max(0, int(policy.get("minClientRevision", 0)))
+    policy["telegramUrl"] = link
+    put_github_json("content/policy.json", policy, "Update Lineup Telegram update link", sha)
+    return JSONResponse({"ok": True, "telegramUrl": link, "message": "Telegram update link saved."})
 
 
 @app.post("/publish")
