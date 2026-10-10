@@ -131,13 +131,13 @@ public class MainActivity extends Activity {
     private void showAdminMenu(){
         shell("Администратор","РЕДАКТОР И СБОРКА БАЗЫ",true,this::showAdminLogin);
         addText("Твоя база раскидок",24,FG,true,3,6);
-        addText("Блоки и фотографии сохраняются на устройстве. Для публикации приложение экспортирует пакет и даёт готовые команды Termux. После отправки в GitHub блоки обновятся у игроков без сборки нового APK.",14,MUTED,false,0,16);
+        addText("Блоки и фотографии сохраняются на устройстве. Экспортируй community.lineup, перенеси его на ПК рядом с Lineup-Publish.bat и запусти BAT. Он опубликует данные в GitHub, а приложение игроков скачает их автоматически — без сборки нового APK.",14,MUTED,false,0,16);
         LinearLayout stats=row();stats.setPadding(dp(14),dp(13),dp(14),dp(13));stats.setBackground(shape(Color.rgb(18,33,50),Color.rgb(39,70,80),16));
         LinearLayout left=column();left.addView(text(String.valueOf(db.list("").size()),24,MINT,true));left.addView(text("сохранённых блоков",12,MUTED,false));
         stats.addView(left,new LinearLayout.LayoutParams(0,-2,1));TextView offline=text("● ЛОКАЛЬНО",11,MINT,true);offline.setGravity(Gravity.CENTER);stats.addView(offline);page.addView(stats,lp(-1,-2));gap(16);
         addButton("＋  Добавить блок",()->startEditor(null),true);
         addButton("✎  Все блоки / редактировать",()->showList(""),false);
-        addButton("⬆  Обновить блоки без сборки APK",this::prepareContentUpdate,true);
+        addButton("⬆  Обновить данные для пользователей",this::prepareContentUpdate,true);
         addButton("✈  Изменить ссылку Telegram",this::changeTelegramLink,false);
         addButton("🔒  Почему нельзя отключить старые APK",this::lockPreviousVersion,false);
         addButton("Экспортировать резервную копию .lineup",this::pickExport,false);
@@ -163,7 +163,7 @@ public class MainActivity extends Activity {
         if(req==PICK_PHOTOS){captureDraft();ArrayList<Uri> selected=new ArrayList<>();if(data.getClipData()!=null){for(int i=0;i<data.getClipData().getItemCount();i++)selected.add(data.getClipData().getItemAt(i).getUri());}else selected.add(data.getData());int count=0;for(Uri uri:selected){if(draftPhotos.size()>=12)break;String path=copyPhoto(uri);if(path!=null){draftPhotos.add(path);count++;}}Toast.makeText(this,"Добавлено фото: "+count,Toast.LENGTH_SHORT).show();showEditor();}
         else if(req==PICK_IMPORT){int n=PackManager.importFromUri(this,db,data.getData());Toast.makeText(this,"Импортировано блоков: "+n,Toast.LENGTH_LONG).show();if(adminSession)showAdminMenu();else showHome();}
         else if(req==PICK_EXPORT){PackManager.exportToUri(this,db,data.getData());Toast.makeText(this,"Резервная копия .lineup сохранена",Toast.LENGTH_LONG).show();showAdminMenu();}
-         else if(req==PICK_UPDATE){PackManager.exportToUri(this,db,data.getData());showTermuxCommands();}
+         else if(req==PICK_UPDATE){PackManager.exportToUri(this,db,data.getData(),prefs.getString("telegram_url","https://t.me/"));showPcPublishInstructions();}
     }catch(Exception e){Toast.makeText(this,"Ошибка: "+(e.getMessage()==null?e.getClass().getSimpleName():e.getMessage()),Toast.LENGTH_LONG).show();if(req==PICK_PHOTOS)showEditor();}}
     private String copyPhoto(Uri uri){InputStream in=null;try{File dir=new File(getFilesDir(),"lineup_images");if(!dir.exists()&&!dir.mkdirs())return null;String mime=getContentResolver().getType(uri);String ext=mime!=null&&mime.toLowerCase(Locale.ROOT).contains("png")?".png":mime!=null&&mime.toLowerCase(Locale.ROOT).contains("webp")?".webp":".jpg";File target=new File(dir,java.util.UUID.randomUUID().toString()+ext);in=getContentResolver().openInputStream(uri);if(in==null)return null;
         try(FileOutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[32768];int total=0,read;while((read=in.read(buffer))!=-1){total+=read;if(total>20*1024*1024){target.delete();throw new IllegalArgumentException("Фото не должно превышать 20 МБ");}out.write(buffer,0,read);}}return target.getAbsolutePath();
@@ -188,45 +188,41 @@ public class MainActivity extends Activity {
         intent.setType("application/octet-stream");
         intent.putExtra(Intent.EXTRA_TITLE,"community.lineup");
         new AlertDialog.Builder(this).setTitle("Подготовить обновление без сборки APK")
-            .setMessage("Сохрани community.lineup в папку «Download / Загрузки». Затем приложение покажет команды для Termux: они отправят базу в твой GitHub, а APK игроков загрузит новые блоки автоматически.")
+            .setMessage("Сохрани community.lineup. Затем перенеси этот файл на ПК в ту же папку, где лежит Lineup-Publish.bat, и запусти BAT. Скрипт опубликует базу в GitHub, а игроки получат новые блоки и фотографии автоматически — без пересборки APK.")
             .setNegativeButton("Отмена",null)
             .setPositiveButton("Экспортировать пакет",(d,w)->startActivityForResult(intent,PICK_UPDATE)).show();
     }
 
-    private void showTermuxCommands(){
-        String telegramJson=JSONObject.quote(prefs.getString("telegram_url","https://t.me/"));
-        String policyCommand="python -c 'import json,pathlib; p=pathlib.Path(\"content/policy.json\"); d=json.loads(p.read_text(encoding=\"utf-8\")); d[\"telegramUrl\"]="+telegramJson+"; p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+\"\\n\",encoding=\"utf-8\")'";
-        String updateCommands="cd ~/ApkGhostly\n"
-            +"git pull --rebase origin main\n"
-            +"cp ~/storage/shared/Download/community.lineup content/packs/community.lineup\n"
-            +"python scripts/build_catalog.py\n"
-            +policyCommand+"\n"
-            +"git add content/packs/community.lineup content/catalog.json content/policy.json\n"
-            +"git commit -m \"Update Lineup content\" || echo \"Нет изменений для коммита\"\n"
-            +"git push origin main";
-        String setupCommands="pkg update -y\npkg install git python gh -y\ntermux-setup-storage\ngh auth login\ngh auth setup-git\ngit config --global user.name \"Lineup Admin\"\ngit config --global user.email \"lineup@users.noreply.github.com\"\ngit clone https://github.com/Selteck1/ApkGhostly.git ~/ApkGhostly";
-        new AlertDialog.Builder(this).setTitle("Команды обновления для Termux")
-            .setMessage("1. Если ещё не настраивал Termux, один раз выполни первоначальную настройку.\n2. Файл community.lineup должен лежать в Download / Загрузки.\n3. Скопируй команды обновления и вставь их в Termux.\n\nКОМАНДЫ ОБНОВЛЕНИЯ:\n\n"+updateCommands)
-            .setNeutralButton("Скопировать настройку",(d,w)->copyText("Команды настройки Termux",setupCommands))
-            .setPositiveButton("Скопировать обновление",(d,w)->copyText("Команды обновления",updateCommands))
+    private static final String PUBLISH_BAT_URL="https://github.com/Selteck1/ApkGhostly/raw/refs/heads/main/tools/Lineup-Publish.bat";
+
+    private void showPcPublishInstructions(){
+        new AlertDialog.Builder(this).setTitle("Пакет данных готов")
+            .setMessage("1. Файл community.lineup сохранён на телефоне. Перенеси его на ПК (например, по USB или через Telegram).\n\n2. Скачай Lineup-Publish.bat и положи рядом с community.lineup.\n\n3. Запусти BAT. Он опубликует пакет в GitHub. При первом запуске Git может попросить войти в GitHub через браузер.\n\n4. Игроки получат блоки и фотографии при следующей проверке обновлений, обычно в течение минуты при открытом приложении.\n\nДля BAT на ПК нужны Git for Windows и Python 3.")
+            .setNeutralButton("Скопировать ссылку BAT",(d,w)->copyText("Ссылка на Lineup-Publish.bat",PUBLISH_BAT_URL))
+            .setPositiveButton("Скачать BAT",(d,w)->openPcPublisher())
             .setNegativeButton("Закрыть",null).show();
+    }
+
+    private void openPcPublisher(){
+        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(PUBLISH_BAT_URL)));}
+        catch(Exception e){copyText("Ссылка на Lineup-Publish.bat",PUBLISH_BAT_URL);}
     }
 
     private void copyText(String label,String value){
         ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-        if(clipboard!=null){clipboard.setPrimaryClip(ClipData.newPlainText(label,value));Toast.makeText(this,"Команды скопированы в буфер обмена",Toast.LENGTH_LONG).show();}
+        if(clipboard!=null){clipboard.setPrimaryClip(ClipData.newPlainText(label,value));Toast.makeText(this,"Скопировано в буфер обмена",Toast.LENGTH_LONG).show();}
     }
 
     private void lockPreviousVersion(){
         new AlertDialog.Builder(this).setTitle("Блокировка старых APK")
-            .setMessage("Для блокировки старых APK нужно выпустить новую версию приложения: номер версии зашит внутри APK. Обновление блоков через Termux не меняет APK и не должно отключать актуальных пользователей.\n\nНовые блоки, описания, фотографии и ссылка Telegram публикуются отдельно — без пересборки APK.")
+            .setMessage("Для блокировки старых APK нужно выпустить новую версию приложения: номер версии зашит внутри APK. Публикация данных через Lineup-Publish.bat не меняет APK и не должна отключать актуальных пользователей.\n\nНовые блоки, описания, фотографии и ссылка Telegram публикуются отдельно — без пересборки APK.")
             .setPositiveButton("Понятно",null).show();
     }
 
     private void changeTelegramLink(){
         if(!adminSession){showAdminLogin();return;}
         EditText link=new EditText(this);link.setSingleLine(true);link.setText(prefs.getString("telegram_url","https://t.me/"));link.setHint("https://t.me/your_channel");link.setTextColor(FG);link.setHintTextColor(MUTED);link.setPadding(dp(12),dp(10),dp(12),dp(10));link.setBackground(shape(SURFACE2,PURPLE,12));
-        new AlertDialog.Builder(this).setTitle("Ссылка обновления в Telegram").setMessage("Ссылка сохранится в настройках администратора и попадёт в content/policy.json при следующем обновлении через Termux.")
+        new AlertDialog.Builder(this).setTitle("Ссылка обновления в Telegram").setMessage("Ссылка сохранится в настройках администратора и попадёт в content/policy.json при следующей публикации через Lineup-Publish.bat.")
             .setView(link).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",(d,w)->{
                 String value=link.getText().toString().trim();
                 try{
