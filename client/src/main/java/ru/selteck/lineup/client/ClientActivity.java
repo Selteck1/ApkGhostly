@@ -128,28 +128,45 @@ public class ClientActivity extends Activity {
         if(checking)return;checking=true;
         if(showProgress)renderGate("Подключаюсь и проверяю политику обновлений…",null);
         worker.execute(()->{
-            String error=null;boolean locked=false;long remoteLatest=0,remoteMinimum=0;String remoteTelegram="https://t.me/";
+            String error=null;boolean locked=false;long remoteLatest=0,remoteMinimum=0;
+            String remoteTelegram="https://t.me/";
+            RemoteContent fetched=new RemoteContent();
             try{
                 JSONObject policy=new JSONObject(new String(download(POLICY_URL,512*1024),StandardCharsets.UTF_8));
-                JSONObject catalog=new JSONObject(new String(download(CATALOG_URL,1024*1024),StandardCharsets.UTF_8));
+                JSONObject catalog=new JSONObject(new String(download(CATALOG_URL,2*1024*1024),StandardCharsets.UTF_8));
                 remoteMinimum=policy.optLong("minClientRevision",0);
                 remoteLatest=catalog.optLong("revision",0);
                 remoteTelegram=policy.optString("telegramUrl","https://t.me/");
                 if(!validTelegram(remoteTelegram))remoteTelegram="https://t.me/";
-                if(catalog.optInt("schemaVersion",0)!=1||policy.optInt("schemaVersion",0)!=1)throw new IllegalArgumentException("Формат каталога не поддерживается.");
+                if(catalog.optInt("schemaVersion",0)!=1||policy.optInt("schemaVersion",0)!=1)
+                    throw new IllegalArgumentException("Формат каталога не поддерживается.");
                 locked=BuildConfig.CONTENT_REVISION<remoteMinimum;
-            }catch(Exception ex){error=ex.getMessage()==null?"Не удалось проверить версию":ex.getMessage();}
-            final String failure=error,link=remoteTelegram;final long latest=remoteLatest,minimum=remoteMinimum;final boolean isLocked=locked;
+                if(!locked)fetched=loadRemoteContent(catalog);
+                fetched.revision=remoteLatest;
+            }catch(Exception ex){
+                error=ex.getMessage()==null?"Не удалось проверить версию":ex.getMessage();
+            }
+            final String failure=error,link=remoteTelegram;
+            final long latest=remoteLatest,minimum=remoteMinimum;
+            final boolean isLocked=locked;
+            final RemoteContent content=fetched;
             runOnUiThread(()->{
                 checking=false;firstCheck=false;
-                if(failure!=null){renderGate("Не удалось подтвердить актуальность этой версии.",failure+"\nПодключись к интернету и повтори проверку.");return;}
-                latestRevision=latest;minimumRevision=minimum;telegramUrl=link;
-                if(isLocked){forceLocked=true;renderGate("Доступ заблокирован администратором. Установи новую версию приложения.", "Версия базы внутри приложения: "+BuildConfig.CONTENT_REVISION+" · Минимальная разрешённая версия: "+minimum);return;}
-                forceLocked=false;unlocked=true;showList("");
-                if(latestRevision>BuildConfig.CONTENT_REVISION){
-                    addText("Доступно обновление базы v"+latestRevision+". Сейчас установлена v"+BuildConfig.CONTENT_REVISION+".",12,Color.rgb(255,207,118),true,4,6);
-                    addButton("Скачать обновление в Telegram",this::openTelegram,false);
+                if(failure!=null){
+                    renderGate("Не удалось загрузить актуальную базу.",failure+"\nПодключись к интернету и повтори проверку.");
+                    return;
                 }
+                latestRevision=latest;minimumRevision=minimum;telegramUrl=link;
+                if(isLocked){
+                    forceLocked=true;blocks.clear();images.clear();
+                    renderGate("Доступ заблокирован администратором. Установи разрешённую версию приложения.",
+                        "Ревизия приложения: "+BuildConfig.CONTENT_REVISION+" · Минимальная разрешённая ревизия: "+minimum);
+                    return;
+                }
+                forceLocked=false;
+                blocks.clear();blocks.addAll(content.blocks);
+                images.clear();images.putAll(content.images);
+                unlocked=true;showList("");
             });
         });
     }
