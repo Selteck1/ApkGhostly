@@ -1070,7 +1070,7 @@ async def get_ice_config(user=Depends(auth_user)):
                 continue
             # Port 53 is often blocked; keep TLS port 5349 and HTTPS-friendly 443.
             urls = [str(url) for url in urls if isinstance(url, str)
-                    and not re.search(r":53(?:\\?|$)", url)]
+                    and ":53?transport=" not in url and not url.endswith(":53")]
             if not urls:
                 continue
             safe_item = {"urls": urls}
