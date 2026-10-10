@@ -27,3 +27,23 @@ jobs:
         with:
           name: Kemtiz-Android-2.5.0
           path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Package Windows PC server
+        run: |
+          mkdir -p dist/Kemtiz-PC-Server/kemtiz
+          cp kemtiz/server.py kemtiz/requirements.txt dist/Kemtiz-PC-Server/kemtiz/
+          cp start_kemtiz_server.bat start_kemtiz_tunnel.bat README_PC_SERVER_RU.md dist/Kemtiz-PC-Server/
+          cat > dist/Kemtiz-PC-Server/START_HERE.txt <<'EOF'
+          KEMTIZ PC SERVER
+          1. Install Python 3.12+ for Windows.
+          2. Start start_kemtiz_server.bat and keep the window open.
+          3. Start start_kemtiz_tunnel.bat in a second window.
+          4. Copy the HTTPS trycloudflare.com URL into Kemtiz app -> SVOY SERVER.
+          5. Press "Сохранить и проверить сервер"; then register or sign in.
+          Read README_PC_SERVER_RU.md for details.
+          EOF
+          (cd dist && zip -qr Kemtiz-PC-Server.zip Kemtiz-PC-Server)
+      - name: Upload Windows PC server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kemtiz-PC-Server-2.5.0
+          path: dist/Kemtiz-PC-Server.zip
