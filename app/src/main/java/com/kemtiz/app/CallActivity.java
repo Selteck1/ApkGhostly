@@ -159,7 +159,7 @@ public class CallActivity extends Activity {
         frame.addView(remoteRenderer, new FrameLayout.LayoutParams(-1, -1));
 
         remotePlaceholder = new TextView(this);
-        remotePlaceholder.setText("KEMTIZ\\n\\nОжидаем видеосвязь…");
+        remotePlaceholder.setText("Ожидаем видеосвязь…");
         remotePlaceholder.setTextColor(WHITE);
         remotePlaceholder.setTextSize(17);
         remotePlaceholder.setGravity(Gravity.CENTER);
@@ -479,9 +479,11 @@ public class CallActivity extends Activity {
             localRenderer.setMirror(true);
             localRenderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL);
             localRenderer.setEnableHardwareScaler(true);
+            // Keep a single echo/noise reduction chain. On some phones stacking the
+            // hardware effect with WebRTC's software AEC makes voices metallic or squeal.
             audioDeviceModule = JavaAudioDeviceModule.builder(getApplicationContext())
-                    .setUseHardwareAcousticEchoCanceler(true)
-                    .setUseHardwareNoiseSuppressor(true)
+                    .setUseHardwareAcousticEchoCanceler(false)
+                    .setUseHardwareNoiseSuppressor(false)
                     .createAudioDeviceModule();
             factory = PeerConnectionFactory.builder()
                     .setAudioDeviceModule(audioDeviceModule)
