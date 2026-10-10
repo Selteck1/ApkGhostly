@@ -3,7 +3,7 @@ name: Kemtiz backend checks
 on:
   workflow_dispatch:
   push:
-    branches: [ "main", "kemtiz-messenger" ]
+    branches: [ "main", "kemtiz-messenger", "kemtiz-video-fix" ]
   pull_request:
     branches: [ "main", "kemtiz-messenger" ]
 

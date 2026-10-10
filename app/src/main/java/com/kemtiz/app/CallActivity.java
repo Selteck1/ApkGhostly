@@ -45,7 +45,7 @@ import org.webrtc.PeerConnectionFactory;
 import org.webrtc.RtpReceiver;
 import org.webrtc.SdpObserver;
 import org.webrtc.SessionDescription;
-import org.webrtc.SurfaceViewRenderer;
+import org.webrtc.TextureViewRenderer;
 import org.webrtc.SurfaceTextureHelper;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
@@ -99,9 +99,10 @@ public class CallActivity extends Activity {
     private AudioManager audioManager;
     private FrameLayout frame;
     private FrameLayout localTile;
-    private SurfaceViewRenderer remoteRenderer;
-    private SurfaceViewRenderer localRenderer;
+    private TextureViewRenderer remoteRenderer;
+    private TextureViewRenderer localRenderer;
     private TextView remotePlaceholder;
+    private TextView localPlaceholder;
     private TextView statusView;
     private LinearLayout controls;
     private CallControlView micButton;
@@ -113,6 +114,10 @@ public class CallActivity extends Activity {
     private android.media.AudioDeviceInfo previousCommunicationDevice;
     private int previousVoiceCallVolume = -1;
     private boolean remoteVideoAttached = false;
+    private boolean localVideoFrameRendered = false;
+    private boolean remoteVideoFrameRendered = false;
+    private boolean iceConnected = false;
+    private boolean remoteAudioTrackReceived = false;
     private PeerConnection peerConnection;
     private EglBase eglBase;
     private AudioSource audioSource;
@@ -154,7 +159,7 @@ public class CallActivity extends Activity {
     private void createUi() {
         frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
-        remoteRenderer = new SurfaceViewRenderer(this);
+        remoteRenderer = new TextureViewRenderer(this);
         remoteRenderer.setBackgroundColor(Color.BLACK);
         frame.addView(remoteRenderer, new FrameLayout.LayoutParams(-1, -1));
 
@@ -173,9 +178,18 @@ public class CallActivity extends Activity {
         tileBackground.setStroke(dp(1), Color.rgb(139, 116, 205));
         localTile.setBackground(tileBackground);
         localTile.setClipToOutline(true);
-        localRenderer = new SurfaceViewRenderer(this);
+        localRenderer = new TextureViewRenderer(this);
         localRenderer.setBackgroundColor(Color.rgb(24, 24, 34));
         localTile.addView(localRenderer, new FrameLayout.LayoutParams(-1, -1));
+
+        localPlaceholder = new TextView(this);
+        localPlaceholder.setText("Запускаем камеру…");
+        localPlaceholder.setTextColor(WHITE);
+        localPlaceholder.setTextSize(11);
+        localPlaceholder.setGravity(Gravity.CENTER);
+        localPlaceholder.setPadding(dp(6), dp(6), dp(6), dp(6));
+        localPlaceholder.setBackgroundColor(0xAA181822);
+        localTile.addView(localPlaceholder, new FrameLayout.LayoutParams(-1, -1));
         FrameLayout.LayoutParams localLp = new FrameLayout.LayoutParams(
                 dp(104), dp(148), Gravity.TOP | Gravity.END);
         localLp.setMargins(0, dp(82), dp(14), 0);
@@ -379,6 +393,11 @@ public class CallActivity extends Activity {
 
     private void handleSocketEvent(JSONObject event) {
         String type = event.optString("type", "");
+        String eventCallId = event.optString("call_id", "");
+        if (!eventCallId.isEmpty() && !eventCallId.equals(callId)) return;
+        long eventChatId = event.optLong("chat_id", -1);
+        if (eventChatId > 0 && eventChatId != chatId) return;
+
         if ("ready".equals(type) && !socketReady) {
             socketReady = true;
             if (rejectForPermissions) {
@@ -472,10 +491,28 @@ public class CallActivity extends Activity {
             }
 
             eglBase = EglBase.create();
-            remoteRenderer.init(eglBase.getEglBaseContext(), null);
+            remoteRenderer.init(eglBase.getEglBaseContext(), new RendererCommon.RendererEvents() {
+                @Override public void onFirstFrameRendered() {
+                    main.post(() -> {
+                        remoteVideoFrameRendered = true;
+                        if (remotePlaceholder != null) remotePlaceholder.setVisibility(View.GONE);
+                        refreshMediaStatus();
+                    });
+                }
+                @Override public void onFrameResolutionChanged(int width, int height, int rotation) { }
+            });
             remoteRenderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL);
             remoteRenderer.setEnableHardwareScaler(true);
-            localRenderer.init(eglBase.getEglBaseContext(), null);
+            localRenderer.init(eglBase.getEglBaseContext(), new RendererCommon.RendererEvents() {
+                @Override public void onFirstFrameRendered() {
+                    main.post(() -> {
+                        localVideoFrameRendered = true;
+                        if (localPlaceholder != null) localPlaceholder.setVisibility(View.GONE);
+                        refreshMediaStatus();
+                    });
+                }
+                @Override public void onFrameResolutionChanged(int width, int height, int rotation) { }
+            });
             localRenderer.setMirror(true);
             localRenderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL);
             localRenderer.setEnableHardwareScaler(true);
@@ -505,6 +542,11 @@ public class CallActivity extends Activity {
             surfaceTextureHelper = SurfaceTextureHelper.create("KemtizCapture", eglBase.getEglBaseContext());
             cameraCapturer.initialize(surfaceTextureHelper, getApplicationContext(), videoSource.getCapturerObserver());
             cameraCapturer.startCapture(640, 480, 24);
+            main.postDelayed(() -> {
+                if (!isFinishing() && mediaPrepared && !localVideoFrameRendered) {
+                    status("Камера запущена, но кадры не отображаются. Проверь разрешение камеры и закрой другие приложения с камерой.");
+                }
+            }, 7000);
             videoTrack = factory.createVideoTrack("kemtiz-video", videoSource);
             videoTrack.addSink(localRenderer);
             List<PeerConnection.IceServer> iceServers = new ArrayList<>();
@@ -517,21 +559,38 @@ public class CallActivity extends Activity {
                 @Override public void onIceConnectionChange(PeerConnection.IceConnectionState state) {
                     if (state == PeerConnection.IceConnectionState.CONNECTED
                             || state == PeerConnection.IceConnectionState.COMPLETED) {
-                        status("Видео и звук подключены");
+                        iceConnected = true;
+                        refreshMediaStatus();
+                        main.postDelayed(() -> {
+                            if (isFinishing() || !iceConnected) return;
+                            if (!remoteVideoAttached) {
+                                status("Сеть соединена, но видеодорожка собеседника не пришла. Перезапусти звонок на обоих телефонах.");
+                            } else if (!remoteVideoFrameRendered) {
+                                status("Видеодорожка получена, но кадры не отображаются. Проверяем видеорендер.");
+                            }
+                        }, 10000);
                     } else if (state == PeerConnection.IceConnectionState.FAILED) {
-                        status("Сеть блокирует медиасвязь. Для этой сети может понадобиться TURN.");
+                        iceConnected = false;
+                        status("Телефоны не смогли соединиться напрямую. Нужен TURN-сервер или другая сеть.");
                     } else if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
+                        iceConnected = false;
                         status("Связь прервана, пытаемся восстановить…");
                     } else {
-                        status("Подключаем видео и звук…");
+                        iceConnected = false;
+                        status("Согласуем связь между телефонами…");
                     }
                 }
                 @Override public void onStandardizedIceConnectionChange(PeerConnection.IceConnectionState state) { }
                 @Override public void onConnectionChange(PeerConnection.PeerConnectionState state) {
                     if (state == PeerConnection.PeerConnectionState.FAILED) {
-                        status("Не удалось связать телефоны. Проверь сеть или TURN.");
+                        iceConnected = false;
+                        status("Не удалось связать телефоны. Для этой сети может понадобиться TURN.");
                     } else if (state == PeerConnection.PeerConnectionState.CONNECTED) {
-                        status("Видео и звук подключены");
+                        iceConnected = true;
+                        refreshMediaStatus();
+                    } else if (state == PeerConnection.PeerConnectionState.DISCONNECTED) {
+                        iceConnected = false;
+                        refreshMediaStatus();
                     }
                 }
                 @Override public void onIceConnectionReceivingChange(boolean receiving) { }
@@ -588,6 +647,8 @@ public class CallActivity extends Activity {
                 remoteAudioTrack = (AudioTrack) track;
                 remoteAudioTrack.setEnabled(true);
                 remoteAudioTrack.setVolume(0.75);
+                remoteAudioTrackReceived = true;
+                refreshMediaStatus();
             });
         }
     }
@@ -598,11 +659,31 @@ public class CallActivity extends Activity {
                 if (!remoteVideoAttached) {
                     track.addSink(remoteRenderer);
                     remoteVideoAttached = true;
+                    status("Видеодорожка собеседника получена, ждём первый кадр…");
                 }
-                if (remotePlaceholder != null) remotePlaceholder.setVisibility(View.GONE);
-                status("Получаем видео собеседника…");
+                // Keep the waiting layer until TextureViewRenderer actually renders a frame.
+                refreshMediaStatus();
             }
         });
+    }
+
+    private void refreshMediaStatus() {
+        if (isFinishing() || statusView == null) return;
+        if (!mediaPrepared) {
+            status("Подготавливаем камеру и микрофон…");
+        } else if (!localVideoFrameRendered) {
+            status("Ждём изображение с твоей камеры…");
+        } else if (!iceConnected) {
+            status("Камера работает · соединяем телефоны…");
+        } else if (!remoteVideoAttached) {
+            status("Сеть соединена · ждём видеодорожку собеседника…");
+        } else if (!remoteVideoFrameRendered) {
+            status("Видеодорожка получена · ждём первый кадр…");
+        } else if (!remoteAudioTrackReceived) {
+            status("Видео подключено · ждём звук собеседника…");
+        } else {
+            status("Видео и звук подключены");
+        }
     }
 
     private void createOffer() {
@@ -665,8 +746,11 @@ public class CallActivity extends Activity {
 
     private void sendSignal(JSONObject signal) {
         if (socket != null && socketReady) {
-            socket.send(json("type", "call.signal", "chat_id", chatId,
+            boolean sent = socket.send(json("type", "call.signal", "chat_id", chatId,
                     "target_user_id", targetId, "call_id", callId, "signal", signal).toString());
+            if (!sent) status("Не удалось отправить сигнал видеосвязи. Проверяем соединение с сервером…");
+        } else {
+            status("Сигнальный канал ещё не готов. Ожидаем сервер…");
         }
     }
 
@@ -743,6 +827,10 @@ public class CallActivity extends Activity {
         audioDeviceModule = null;
         remoteAudioTrack = null;
         remoteVideoAttached = false;
+        localVideoFrameRendered = false;
+        remoteVideoFrameRendered = false;
+        remoteAudioTrackReceived = false;
+        iceConnected = false;
         mediaPrepared = false;
     }
 
