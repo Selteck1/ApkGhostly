@@ -90,9 +90,14 @@ def main() -> None:
             raise RuntimeError("Could not add Google Mobile Ads dependency")
     # Kotlin 2.3 removes the old kotlinOptions.jvmTarget setter. Migrate the
     # upstream build to the supported compilerOptions DSL before compiling.
-    legacy_jvm_options = '    kotlinOptions {\n        jvmTarget = "11"\n    }\n'
-    if legacy_jvm_options in gradle:
-        gradle = replace_once(gradle, legacy_jvm_options, "", "legacy JVM target options")
+    gradle, legacy_count = re.subn(
+        r'(?m)^[ \t]*kotlinOptions[ \t]*\{\r?\n[ \t]*jvmTarget[ \t]*=[ \t]*"11"[ \t]*\r?\n[ \t]*\}[ \t]*\r?\n?',
+        "",
+        gradle,
+        count=1,
+    )
+    if legacy_count != 1:
+        raise RuntimeError("Could not migrate the legacy kotlinOptions.jvmTarget block")
     gradle = replace_once(
         gradle,
         "}\n\ndependencies {",
