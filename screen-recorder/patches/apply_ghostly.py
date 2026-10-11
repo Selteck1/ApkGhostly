@@ -60,7 +60,8 @@ def main() -> None:
     manifest_path = root / "app/src/main/AndroidManifest.xml"
     strings_path = root / "app/src/main/res/values/strings.xml"
     themes_path = root / "app/src/main/res/values/themes.xml"
-    version_checks = (gradle_path, manifest_path, strings_path, themes_path)
+    catalog_path = root / "gradle/libs.versions.toml"
+    version_checks = (gradle_path, manifest_path, strings_path, themes_path, catalog_path)
     for path in version_checks:
         if not path.is_file():
             raise SystemExit(f"Pinned FluxRecorder source is incomplete; missing {path}")
@@ -88,6 +89,12 @@ def main() -> None:
         if count != 1:
             raise RuntimeError("Could not add Google Mobile Ads dependency")
     write_text(gradle_path, gradle)
+
+    # Google Mobile Ads 25.5.0 includes Kotlin 2.3 metadata. Upgrade the upstream
+    # Kotlin/Compose compiler plugins to a compatible release before compiling.
+    catalog = catalog_path.read_text(encoding="utf-8")
+    catalog = replace_once(catalog, 'kotlin = "2.0.21"', 'kotlin = "2.3.21"', "Kotlin toolchain version")
+    write_text(catalog_path, catalog)
 
     strings = strings_path.read_text(encoding="utf-8")
     strings = strings.replace(">Flux Recorder<", ">Ghostly Recorder<")
