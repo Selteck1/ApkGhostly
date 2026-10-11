@@ -2,6 +2,7 @@ package ru.selteck.ghostly.recorder
 
 import android.Manifest
 import android.app.Activity
+import android.app.StatusBarManager
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -13,7 +14,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Icon
 import android.media.projection.MediaProjectionManager
-import android.service.quicksettings.TileService
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -322,16 +322,18 @@ class MainActivity : Activity() {
 
     private fun requestQuickSettingsTile() {
         if (Build.VERSION.SDK_INT >= 33) {
-            TileService.requestAddTileService(
+            val statusBar = getSystemService(StatusBarManager::class.java)
+            statusBar?.requestAddTileService(
                 ComponentName(this, RecorderTileService::class.java),
                 "Ghostly Recorder",
                 Icon.createWithResource(this, android.R.drawable.ic_menu_camera),
                 mainExecutor
             ) { result ->
                 val message = when (result) {
-                    TileService.RESULT_TILE_ADDED -> "Ghostly Recorder добавлен в быстрые настройки"
-                    TileService.RESULT_TILE_ALREADY_ADDED -> "Плитка Ghostly Recorder уже добавлена"
-                    else -> "Android покажет системный запрос добавления плитки"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> "Ghostly Recorder добавлен в быстрые настройки"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> "Плитка Ghostly Recorder уже добавлена"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> "Добавление отменено"
+                    else -> "Не удалось добавить плитку. Попробуй через меню изменения быстрых настроек."
                 }
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
             }
