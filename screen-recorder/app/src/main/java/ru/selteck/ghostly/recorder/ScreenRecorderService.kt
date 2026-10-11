@@ -43,6 +43,8 @@ class ScreenRecorderService : Service() {
     private var chosenWidth = 0
     private var chosenHeight = 0
     private var chosenFps = 30
+    private var chosenCodec = "H.264"
+    private var chosenBitrate = 28_000_000
 
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
@@ -112,13 +114,25 @@ class ScreenRecorderService : Service() {
         (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(metrics)
         val requestedShortEdge = startIntent.getIntExtra(EXTRA_RESOLUTION, 1080)
         val requestedFps = startIntent.getIntExtra(EXTRA_FPS, 60)
-        val bitrate = startIntent.getIntExtra(EXTRA_BITRATE, 6_000_000).coerceIn(2_000_000, 12_000_000)
+        val requestedBitrate = startIntent.getIntExtra(EXTRA_BITRATE, 28_000_000).coerceIn(4_000_000, 50_000_000)
+        val requestedOrientation = startIntent.getIntExtra(EXTRA_ORIENTATION, ORIENTATION_LANDSCAPE)
+        val preferHevc = startIntent.getBooleanExtra(EXTRA_HEVC, true)
         val displayWidth = metrics.widthPixels.coerceAtLeast(2)
         val displayHeight = metrics.heightPixels.coerceAtLeast(2)
-        val parameters = selectVideoParameters(displayWidth, displayHeight, requestedShortEdge, requestedFps)
-        chosenWidth = parameters.first
-        chosenHeight = parameters.second
-        chosenFps = parameters.third
+
+        // Base the capture canvas on the device's long/short edges, not on the
+        // recorder app's current portrait UI. Otherwise a landscape game is
+        // squeezed into a portrait canvas when recording is started from this app.
+        val config = selectVideoParameters(
+            displayWidth, displayHeight, requestedShortEdge, requestedFps,
+            requestedOrientation, preferHevc
+        )
+        chosenWidth = config.width
+        chosenHeight = config.height
+        chosenFps = config.fps
+        chosenCodec = if (config.mime == MIME_HEVC) "HEVC" else "H.264"
+        val bitrate = limitBitrate(requestedBitrate, config.mime, chosenWidth, chosenHeight, chosenFps)
+        chosenBitrate = bitrate
 
         createOutputFile()
         val descriptor = outputDescriptor ?: throw IllegalStateException("Не удалось открыть файл для записи")
@@ -135,7 +149,9 @@ class ScreenRecorderService : Service() {
         }
         mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
         mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+        mediaRecorder.setVideoEncoder(
+            if (config.mime == MIME_HEVC) MediaRecorder.VideoEncoder.HEVC else MediaRecorder.VideoEncoder.H264
+        )
         mediaRecorder.setVideoSize(chosenWidth, chosenHeight)
         mediaRecorder.setVideoFrameRate(chosenFps)
         mediaRecorder.setVideoEncodingBitRate(bitrate)
@@ -152,11 +168,18 @@ class ScreenRecorderService : Service() {
         mediaRecorder.prepare()
 
         val surface: Surface = mediaRecorder.surface
+        val deviceShortEdge = minOf(displayWidth, displayHeight).coerceAtLeast(1)
+        val outputShortEdge = minOf(chosenWidth, chosenHeight)
+        // Keep logical dp size constant when rendering the virtual display at a
+        // lower/higher pixel resolution; leaving the original DPI here causes UI
+        // and game content to be scaled against the wrong logical canvas.
+        val captureDensityDpi = (metrics.densityDpi.toDouble() * outputShortEdge / deviceShortEdge)
+            .toInt().coerceAtLeast(1)
         virtualDisplay = projection?.createVirtualDisplay(
             "GhostlyScreenRecorder",
             chosenWidth,
             chosenHeight,
-            metrics.densityDpi,
+            captureDensityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             surface,
             null,
@@ -166,102 +189,127 @@ class ScreenRecorderService : Service() {
         mediaRecorder.start()
         recordingStarted = true
         prefs.edit().putBoolean(KEY_RECORDING, true).apply()
-        val detail = "$chosenWidth × $chosenHeight · $chosenFps FPS"
+        val detail = "$chosenWidth × $chosenHeight · $chosenFps FPS · $chosenCodec · ${chosenBitrate / 1_000_000} Мбит/с"
         sendState(true, detail)
         updateNotification("Идёт запись · нажми, чтобы остановить")
     }
 
+    private data class VideoConfig(
+        val width: Int,
+        val height: Int,
+        val fps: Int,
+        val mime: String
+    )
+
     /**
-     * The system AVC encoder is queried before MediaRecorder is configured.
-     * Unsupported frame rates fall back to a supported rate; unsupported sizes
-     * fall back to the next lower preset. The encoder still controls real-time
-     * frame delivery and may drop frames under thermal/GPU load.
+     * Build a fixed-aspect capture canvas for the orientation selected in the UI.
+     * The UI itself is portrait, but game capture often needs a landscape buffer.
+     * Always inspect hardware encoder capabilities and prefer HEVC only when it
+     * can deliver at least the same frame rate as AVC.
      */
     private fun selectVideoParameters(
         screenWidth: Int,
         screenHeight: Int,
         requestedShortEdge: Int,
-        requestedFps: Int
-    ): Triple<Int, Int, Int> {
-        // Presets use the short edge: 720p on a landscape screen is 1280x720,
-        // while portrait screens preserve their native aspect ratio.
-        val shortScreenEdge = minOf(screenWidth, screenHeight)
-        val maxRequestedShortEdge = minOf(requestedShortEdge, shortScreenEdge)
-        val targetEdges = listOf(maxRequestedShortEdge, 1080, 720, 480)
+        requestedFps: Int,
+        requestedOrientation: Int,
+        preferHevc: Boolean
+    ): VideoConfig {
+        val shortScreenEdge = minOf(screenWidth, screenHeight).coerceAtLeast(2)
+        val longScreenEdge = maxOf(screenWidth, screenHeight).coerceAtLeast(2)
+        val landscape = when (requestedOrientation) {
+            ORIENTATION_LANDSCAPE -> true
+            ORIENTATION_PORTRAIT -> false
+            else -> screenWidth >= screenHeight
+        }
+        val aspect = longScreenEdge.toDouble() / shortScreenEdge.toDouble()
+        val targetEdges = listOf(requestedShortEdge.coerceAtLeast(480), 1080, 720, 480)
             .distinct()
-            .filter { it <= maxRequestedShortEdge }
-            .ifEmpty { listOf(minOf(480, shortScreenEdge)) }
+            .filter { it <= requestedShortEdge.coerceAtLeast(480) }
+            .ifEmpty { listOf(480) }
 
         var chosenSize: Pair<Int, Int>? = null
         for (shortEdge in targetEdges) {
-            val ratio = screenWidth.toDouble() / screenHeight.toDouble()
-            var width: Int
-            var height: Int
-            if (screenWidth >= screenHeight) {
-                height = shortEdge
-                width = (shortEdge * ratio).toInt()
-            } else {
-                width = shortEdge
-                height = (shortEdge / ratio).toInt()
-            }
-            width = (width.coerceAtLeast(2) / 2) * 2
-            height = (height.coerceAtLeast(2) / 2) * 2
-            if (supportsSize(width, height)) {
-                chosenSize = width to height
+            val width = if (landscape) (shortEdge * aspect).toInt() else shortEdge
+            val height = if (landscape) shortEdge else (shortEdge * aspect).toInt()
+            val evenWidth = (width.coerceAtLeast(2) / 2) * 2
+            val evenHeight = (height.coerceAtLeast(2) / 2) * 2
+            val avcSupports = supportsSize(evenWidth, evenHeight, MIME_AVC)
+            val hevcSupports = preferHevc && supportsSize(evenWidth, evenHeight, MIME_HEVC)
+            if (avcSupports || hevcSupports) {
+                chosenSize = evenWidth to evenHeight
                 break
             }
         }
 
         val (width, height) = chosenSize ?: run {
-            val ratio = screenWidth.toDouble() / screenHeight.toDouble()
-            if (screenWidth >= screenHeight) {
-                val h = minOf(480, shortScreenEdge)
-                (h * ratio).toInt().coerceAtLeast(2) to h.coerceAtLeast(2)
-            } else {
-                val w = minOf(480, shortScreenEdge)
-                w.coerceAtLeast(2) to (w / ratio).toInt().coerceAtLeast(2)
-            }
+            val shortEdge = 480
+            val w = if (landscape) (shortEdge * aspect).toInt() else shortEdge
+            val h = if (landscape) shortEdge else (shortEdge * aspect).toInt()
+            ((w.coerceAtLeast(2) / 2) * 2) to ((h.coerceAtLeast(2) / 2) * 2)
         }
 
-        val candidates = listOf(120, 90, 60, 30).filter { it <= requestedFps }.ifEmpty { listOf(30) }
-        val actualFps = candidates.firstOrNull { supportsSizeAndRate(width, height, it) }
-            ?: candidates.last()
-        return Triple(width, height, actualFps)
+        val candidates = listOf(120, 90, 60, 30)
+            .filter { it <= requestedFps }
+            .ifEmpty { listOf(30) }
+        val avcFps = candidates.firstOrNull { supportsSizeAndRate(width, height, it, MIME_AVC) }
+        val hevcFps = if (preferHevc) {
+            candidates.firstOrNull { supportsSizeAndRate(width, height, it, MIME_HEVC) }
+        } else null
+
+        return if (hevcFps != null && (avcFps == null || hevcFps >= avcFps)) {
+            VideoConfig(width, height, hevcFps, MIME_HEVC)
+        } else {
+            VideoConfig(width, height, avcFps ?: candidates.last(), MIME_AVC)
+        }
     }
 
-    private fun videoEncoders(): List<MediaCodecInfo> {
+    private fun videoEncoders(mime: String): List<MediaCodecInfo> {
         val encoders = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { info ->
-            info.isEncoder && info.supportedTypes.any { it.equals("video/avc", ignoreCase = true) }
+            info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) }
         }
-        val hardware = encoders.filter {
-            Build.VERSION.SDK_INT < 29 || it.isHardwareAccelerated
-        }
+        val hardware = encoders.filter { Build.VERSION.SDK_INT < 29 || it.isHardwareAccelerated }
         return hardware.ifEmpty { encoders }
     }
 
-    private fun supportsSize(width: Int, height: Int): Boolean {
-        val encoders = videoEncoders()
-        if (encoders.isEmpty()) return true
+    private fun supportsSize(width: Int, height: Int, mime: String): Boolean {
+        val encoders = videoEncoders(mime)
+        if (encoders.isEmpty()) return false
         return encoders.any { info ->
             try {
-                info.getCapabilitiesForType("video/avc").videoCapabilities.isSizeSupported(width, height)
+                info.getCapabilitiesForType(mime).videoCapabilities.isSizeSupported(width, height)
             } catch (_: Exception) {
                 false
             }
         }
     }
 
-    private fun supportsSizeAndRate(width: Int, height: Int, fps: Int): Boolean {
-        val encoders = videoEncoders()
-        if (encoders.isEmpty()) return fps <= 60
+    private fun supportsSizeAndRate(width: Int, height: Int, fps: Int, mime: String): Boolean {
+        val encoders = videoEncoders(mime)
+        if (encoders.isEmpty()) return false
         return encoders.any { info ->
             try {
-                info.getCapabilitiesForType("video/avc").videoCapabilities
+                info.getCapabilitiesForType(mime).videoCapabilities
                     .areSizeAndRateSupported(width, height, fps.toDouble())
             } catch (_: Exception) {
                 false
             }
         }
+    }
+
+    private fun limitBitrate(requested: Int, mime: String, width: Int, height: Int, fps: Int): Int {
+        val range = videoEncoders(mime).firstNotNullOfOrNull { info ->
+            try {
+                val capabilities = info.getCapabilitiesForType(mime).videoCapabilities
+                if (capabilities.isSizeSupported(width, height) &&
+                    capabilities.areSizeAndRateSupported(width, height, fps.toDouble())) {
+                    capabilities.bitrateRange
+                } else null
+            } catch (_: Exception) {
+                null
+            }
+        }
+        return if (range == null) requested else requested.coerceIn(range.lower, range.upper)
     }
 
     private fun createOutputFile() {
@@ -420,6 +468,13 @@ class ScreenRecorderService : Service() {
         const val EXTRA_FPS = "fps"
         const val EXTRA_BITRATE = "bitrate"
         const val EXTRA_MIC = "mic_enabled"
+        const val EXTRA_HEVC = "hevc_enabled"
+        const val EXTRA_ORIENTATION = "orientation"
+        private const val ORIENTATION_LANDSCAPE = 0
+        private const val ORIENTATION_PORTRAIT = 1
+        private const val ORIENTATION_AUTO = 2
+        private const val MIME_AVC = "video/avc"
+        private const val MIME_HEVC = "video/hevc"
         const val EXTRA_ACTIVE = "active"
         const val EXTRA_MESSAGE = "message"
         const val EXTRA_ERROR = "error"
