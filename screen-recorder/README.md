@@ -1,41 +1,32 @@
-# Ghostly Screen Recorder (Android)
+# Ghostly Screen Recorder — FluxRecorder engine
 
-A separate Android application inside the ApkGhostly repository. It does not change the existing Forge/Minecraft build at the repository root.
+Ghostly Recorder is built from [FluxRecorder](https://github.com/IcradleInnovationsLtd/FluxRecorder), pinned to commit `4ddca4280c5a79a808f759bfe82b6802898b14ce`. FluxRecorder is distributed under the **MIT License**. The upstream source and its license are kept in the `screen-recorder/rec-upstream` Git submodule; the Ghostly branding and startup-adaptation patch is `screen-recorder/patches/apply_ghostly.py`.
 
-## Features
+## Included functionality
 
-- Dark Ghostly-style interface.
-- Screen recording through Android MediaProjection with an MP4/H.264 MediaRecorder pipeline, designed to use the device's system video encoder rather than render a software overlay.
-- Resolution presets: 480p, 720p, 1080p and 1440p/2K. Presets use the short edge and preserve the phone's aspect ratio, so landscape capture is sized correctly even when the recorder UI itself is portrait.
-- Orientation selection: landscape for games, portrait for vertical video, or current display orientation.
-- Requested frame-rate presets: 30, 60, 90 and 120 FPS. The app checks the available hardware encoder and falls back to a supported rate or resolution when possible.
-- Adjustable video bitrate from 4 to 50 Mbit/s, with device limits respected.
-- Optional hardware H.265/HEVC encoding for better compression/retained detail at similar bitrates; H.264 is used when HEVC is unavailable or cannot maintain the requested frame rate.
-- Optional microphone audio; recording can be completely silent.
-- Output saved to Gallery → Movies/Ghostly Recorder.
-- Foreground notification with a stop action.
-- Quick Settings tile beside controls such as Wi-Fi/Hotspot; Android 13+ asks whether to add it, while older systems require adding it from the edit button.
+This engine brings the Compose UI and recording pipeline from FluxRecorder, including hardware-accelerated recording, configurable capture quality, internal playback audio where supported by Android and by the captured app, microphone recording, recording library, quick controls and floating controls. Features can vary by device and Android version; no fixed FPS is guaranteed on every phone.
 
-## Build
+The package ID is `ru.selteck.ghostly.recorder`, and the launcher name is **Ghostly Recorder**. At launch, a branded screen attempts to show a Google AdMob App Open ad. If the ad fails to load, the recorder opens without waiting indefinitely.
 
-Requirements: JDK 17, Android SDK Platform 35, and Gradle 8.7 or newer.
+## Ads
 
-From the repository root:
+The CI build uses Google's official **test App Open ad** and test App ID by default. Test ads do not generate revenue. Google advises using test IDs during development to avoid invalid traffic or account restrictions: https://developers.google.com/admob/android/test-ads
 
-    gradle -p screen-recorder --no-daemon assembleDebug
+To configure your own AdMob IDs for a monetized build, add these **Actions variables** in your GitHub repository:
 
-The debug APK is created at:
+- `GHOSTLY_ADMOB_APP_ID`: app ID like `ca-app-pub-1234567890123456~1234567890`
+- `GHOSTLY_APP_OPEN_AD_UNIT_ID`: App Open unit ID like `ca-app-pub-1234567890123456/1234567890`
 
-    screen-recorder/app/build/outputs/apk/debug/app-debug.apk
+Before enabling live ads, configure the correct consent/privacy flow for the regions in which you distribute the app (including EEA/UK where applicable). Never click production ads while testing.
 
-A GitHub Actions workflow builds the APK and uploads it as a downloadable artifact after changes to this directory.
+## Build locally
 
-## Performance notes
+```bash
+git clone --recurse-submodules https://github.com/Selteck1/ApkGhostly.git
+python3 screen-recorder/patches/apply_ghostly.py screen-recorder/rec-upstream
+gradle -p screen-recorder/rec-upstream --no-daemon assembleDebug
+```
 
-The app intentionally avoids a live preview, floating controls and effects while recording. This reduces extra work, but no screen recorder can promise zero FPS loss on every phone: video capture, encoding, memory bandwidth, thermals and the game all compete for resources. For demanding games, start with 1080p/60 FPS and 15–25 Mbit/s; for 1080p/90 FPS try 25–35 Mbit/s; for 2K try 35–50 Mbit/s only if the phone remains smooth.
+The debug APK will be in `screen-recorder/rec-upstream/app/build/outputs/apk/debug/`. GitHub Actions builds and uploads the APK artifact automatically on changes to the recorder project.
 
-The 1440p/2K and 90/120 FPS options are requests, not guarantees. The recorder reports actual encoded dimensions/FPS, codec and bitrate. If the encoder cannot support a requested mode, it falls back to a supported size/rate when possible. A phone's physical screen resolution remains a limit on real scene detail; upscaling above it cannot recover missing details.
-
-Audio limitation: this first version records the microphone, not direct Android/game playback audio. Turn off the microphone switch for a silent recording. Direct internal-audio capture would need a separate playback-capture and audio/video muxing pipeline and is not claimed as supported here.
-
-Android 10 (API 29) or newer is required. Android shows its standard screen-capture consent dialog each time a new recording starts.
+The original Ghostly implementation remains in `screen-recorder/app` as a fallback reference. This derivative project keeps the upstream MIT license notice in the built APK and the complete upstream source in the pinned submodule.

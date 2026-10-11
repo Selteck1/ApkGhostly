@@ -1,0 +1,3 @@
+[submodule "screen-recorder/rec-upstream"]
+	path = screen-recorder/rec-upstream
+	url = https://github.com/IcradleInnovationsLtd/FluxRecorder.git
