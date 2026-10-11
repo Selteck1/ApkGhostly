@@ -144,8 +144,9 @@ def main() -> None:
     # Set Ghostly launcher artwork and embed the required upstream MIT license text in the APK.
     manifest = replace_once(manifest, 'android:icon="@mipmap/ic_launcher"',
                             'android:icon="@drawable/ic_ghostly_mark"', "app icon")
-    manifest = replace_once(manifest, 'android:roundIcon="@mipmap/ic_launcher_round"',
-                            'android:roundIcon="@drawable/ic_ghostly_mark"', "round app icon")
+    if 'android:roundIcon="@mipmap/ic_launcher_round"' in manifest:
+        manifest = replace_once(manifest, 'android:roundIcon="@mipmap/ic_launcher_round"',
+                                'android:roundIcon="@drawable/ic_ghostly_mark"', "round app icon")
     application_match = re.search(r"<application\b[\s\S]*?>", manifest)
     app_end = application_match.end() if application_match else app_end
     app_meta = (
