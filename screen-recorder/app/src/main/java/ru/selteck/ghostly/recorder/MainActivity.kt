@@ -291,7 +291,7 @@ class MainActivity : Activity() {
             action = ScreenRecorderService.ACTION_START
             putExtra(ScreenRecorderService.EXTRA_RESULT_CODE, resultCode)
             putExtra(ScreenRecorderService.EXTRA_PROJECTION_DATA, data)
-            putExtra(ScreenRecorderService.EXTRA_RESOLUTION, RESOLUTION_LONG_EDGES[resolutionSpinner.selectedItemPosition])
+            putExtra(ScreenRecorderService.EXTRA_RESOLUTION, RESOLUTION_SHORT_EDGES[resolutionSpinner.selectedItemPosition])
             putExtra(ScreenRecorderService.EXTRA_FPS, FPS_VALUES[fpsSpinner.selectedItemPosition])
             putExtra(ScreenRecorderService.EXTRA_BITRATE, (bitrateSeek.progress + 2) * 1_000_000)
             putExtra(ScreenRecorderService.EXTRA_MIC, micSwitch.isChecked)
@@ -406,7 +406,7 @@ class MainActivity : Activity() {
         private const val KEY_BITRATE = "bitrate_mbps"
         private const val KEY_MIC = "microphone_enabled"
 
-        private val RESOLUTION_LONG_EDGES = intArrayOf(854, 1280, 1920, 2560)
+        private val RESOLUTION_SHORT_EDGES = intArrayOf(480, 720, 1080, 1440)
         private val FPS_VALUES = intArrayOf(30, 60, 90, 120)
 
         private val C_BG = Color.rgb(11, 11, 18)
