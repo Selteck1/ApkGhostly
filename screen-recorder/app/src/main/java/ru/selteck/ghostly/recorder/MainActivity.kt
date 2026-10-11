@@ -246,7 +246,7 @@ class MainActivity : Activity() {
 
         page.addView(label("ПРОФИЛЬ НАГРУЗКИ", 12f, C_MUTED, true), margin(bottom = 8))
         val tipCard = card()
-        tipCard.addView(label("Для игры начни с 720p / 60 FPS / 4–6 Мбит/с. 1080p, 2K и 90/120 FPS зависят от аппаратного кодировщика и температуры телефона. Никакая запись не гарантирует полное отсутствие просадки FPS.", 12f, C_MUTED))
+        tipCard.addView(label("Для Standoff 2 попробуй: Альбомная · 1080p · 90 FPS · 25–35 Мбит/с · HEVC. Начни запись и сразу переключись в игру. Для 2K поставь 35–50 Мбит/с. Если FPS проседает, отключи HEVC или снизь до 60 FPS.", 12f, C_MUTED))
         page.addView(tipCard, margin(bottom = 22))
 
         recordButton = Button(this).apply {
@@ -299,6 +299,13 @@ class MainActivity : Activity() {
     }
 
     private fun restoreSettings() {
+        // Existing installs stored a 2–12 Mbit/s slider value. Move that old
+        // maximum to a better starting point once, without overriding later choices.
+        if (!prefs.getBoolean(KEY_QUALITY_MIGRATED, false)) {
+            val oldBitrate = prefs.getInt(KEY_BITRATE, 28)
+            if (oldBitrate <= 12) prefs.edit().putInt(KEY_BITRATE, 28).apply()
+            prefs.edit().putBoolean(KEY_QUALITY_MIGRATED, true).apply()
+        }
         resolutionSpinner.setSelection(prefs.getInt(KEY_RESOLUTION, 2).coerceIn(0, 3))
         fpsSpinner.setSelection(prefs.getInt(KEY_FPS, 1).coerceIn(0, 3))
         orientationSpinner.setSelection(prefs.getInt(KEY_ORIENTATION, 0).coerceIn(0, 2))
@@ -484,6 +491,7 @@ class MainActivity : Activity() {
         private const val KEY_MIC = "microphone_enabled"
         private const val KEY_HEVC = "hevc_enabled"
         private const val KEY_ORIENTATION = "orientation_index"
+        private const val KEY_QUALITY_MIGRATED = "quality_slider_v2_migrated"
 
         private const val ORIENTATION_LANDSCAPE = 0
         private const val ORIENTATION_PORTRAIT = 1
