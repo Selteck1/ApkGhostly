@@ -220,7 +220,7 @@ class MainActivity : Activity() {
             thumbTintList = android.content.res.ColorStateList.valueOf(C_ACCENT)
         }
         qualityCard.addView(bitrateSeek, margin(top = 0))
-        qualityCard.addView(label("Выше битрейт = чётче картинка и больше размер файла.", 11f, C_MUTED), margin(top = 2))
+        qualityCard.addView(label("1080p/90 FPS: попробуй 25–35 Мбит/с. 2K: 35–50 Мбит/с. Если игра начнёт терять FPS, снизь битрейт или отключи HEVC.", 11f, C_MUTED), margin(top = 2))
         page.addView(qualityCard, margin(bottom = 18))
 
         val audioCard = card()
