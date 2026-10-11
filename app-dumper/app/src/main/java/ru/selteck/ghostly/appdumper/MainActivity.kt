@@ -404,6 +404,10 @@ class MainActivity : Activity() {
                                     entry.isDirectory,
                                     usedOutputNames
                                 )
+                                if (fullPath == null) {
+                                    skippedEntries++
+                                    continue
+                                }
                                 val outputEntry = ZipEntry(fullPath)
                                 if (entry.time > 0L) outputEntry.time = entry.time
                                 zip.putNextEntry(outputEntry)
@@ -481,9 +485,10 @@ class MainActivity : Activity() {
         requested: String,
         directory: Boolean,
         usedNames: MutableSet<String>
-    ): String {
+    ): String? {
         if (usedNames.add(requested)) return requested
-        if (directory) return requested
+        // Repeated directory records are harmless; omit the duplicate record.
+        if (directory) return null
         val dot = requested.lastIndexOf('.')
         val parent = if (requested.contains('/')) requested.substringBeforeLast('/') + "/" else ""
         val leaf = requested.substringAfterLast('/')
