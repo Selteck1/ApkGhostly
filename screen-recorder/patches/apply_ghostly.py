@@ -90,14 +90,21 @@ def main() -> None:
             raise RuntimeError("Could not add Google Mobile Ads dependency")
     # Kotlin 2.3 removes the old kotlinOptions.jvmTarget setter. Migrate the
     # upstream build to the supported compilerOptions DSL before compiling.
-    gradle, legacy_count = re.subn(
-        r'(?m)^[ \t]*kotlinOptions[ \t]*\{\r?\n[ \t]*jvmTarget[ \t]*=[ \t]*"11"[ \t]*\r?\n[ \t]*\}[ \t]*\r?\n?',
-        "",
-        gradle,
-        count=1,
-    )
-    if legacy_count != 1:
-        raise RuntimeError("Could not migrate the legacy kotlinOptions.jvmTarget block")
+    # Remove the deprecated kotlinOptions block by its literal boundaries. This
+    # deliberately avoids depending on whitespace/line-ending differences.
+    legacy_start = gradle.find("kotlinOptions {")
+    if legacy_start >= 0:
+        legacy_end = gradle.find("}", legacy_start)
+        legacy_block = gradle[legacy_start:legacy_end + 1] if legacy_end >= 0 else ""
+        if 'jvmTarget = "11"' not in legacy_block:
+            raise RuntimeError("Found an unexpected kotlinOptions block")
+        line_start = gradle.rfind("\\n", 0, legacy_start) + 1
+        line_end = gradle.find("\\n", legacy_end + 1)
+        if line_end < 0:
+            line_end = len(gradle)
+        gradle = gradle[:line_start] + gradle[line_end + 1:]
+    if 'jvmTarget = "11"' in gradle:
+        raise RuntimeError("Deprecated jvmTarget string assignment remains in Gradle file")
     gradle = replace_once(
         gradle,
         "}\n\ndependencies {",
