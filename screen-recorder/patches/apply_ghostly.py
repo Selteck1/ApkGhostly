@@ -120,6 +120,7 @@ def main() -> None:
     # Kotlin/Compose compiler plugins to a compatible release before compiling.
     catalog = catalog_path.read_text(encoding="utf-8")
     catalog = replace_once(catalog, 'kotlin = "2.0.21"', 'kotlin = "2.3.21"', "Kotlin toolchain version")
+    catalog = replace_once(catalog, 'hilt = "2.51.1"', 'hilt = "2.58"', "Hilt metadata compatibility")
     write_text(catalog_path, catalog)
 
     strings = strings_path.read_text(encoding="utf-8")
