@@ -258,18 +258,22 @@ def main() -> None:
         "        ghostlyAppOpenAd = GhostlyAppOpenAd(this)", "Ad manager init",
     )
     activity_text = main_activity.read_text(encoding="utf-8")
-    if re.search(r"(?m)^\s*override fun onResume\(", activity_text):
-        raise SystemExit("MainActivity already overrides onResume; update the lifecycle hook manually.")
+    resume_anchor = "    override fun onResume() {\n        super.onResume()"
+    if activity_text.count(resume_anchor) != 1:
+        raise SystemExit("Expected exactly one existing MainActivity.onResume() hook.")
+    activity_text = activity_text.replace(
+        resume_anchor,
+        resume_anchor + "\n        ghostlyAppOpenAd.onResume()",
+        1,
+    )
+    if re.search(r"(?m)^\s*override fun onPause\(", activity_text):
+        raise SystemExit("MainActivity already overrides onPause; update the lifecycle hook manually.")
     final_brace = activity_text.rfind("}")
     if final_brace < 0:
         raise SystemExit("Unable to find MainActivity closing brace.")
     activity_text = (
         activity_text[:final_brace]
-        + "\n    override fun onResume() {\n"
-        + "        super.onResume()\n"
-        + "        ghostlyAppOpenAd.onResume()\n"
-        + "    }\n\n"
-        + "    override fun onPause() {\n"
+        + "\n    override fun onPause() {\n"
         + "        ghostlyAppOpenAd.onPause()\n"
         + "        super.onPause()\n"
         + "    }\n"
