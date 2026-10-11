@@ -22,10 +22,10 @@ permissions:
 
 jobs:
   build-debug-apk:
-    name: Build Ghostly Screen Recorder APK (REC engine)
+    name: Build Ghostly Recorder APK (FluxRecorder engine)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository and pinned REC source
+      - name: Checkout repository and pinned source
         uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -44,7 +44,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10.2'
+          gradle-version: '8.13'
 
       - name: Apply Ghostly branding and App Open ads
         env:
@@ -59,7 +59,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: GhostlyScreenRecorder-REC-engine-debug
+          name: GhostlyScreenRecorder-FluxEngine-debug
           path: screen-recorder/rec-upstream/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14

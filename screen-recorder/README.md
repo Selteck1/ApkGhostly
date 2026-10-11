@@ -1,26 +1,25 @@
-# Ghostly Screen Recorder (REC engine edition)
+# Ghostly Screen Recorder — FluxRecorder engine
 
-This build of **Ghostly Screen Recorder** uses the recording engine and application source from [pixl-hq/rec](https://github.com/pixl-hq/rec), pinned to commit `0c855ef7a73111be394d5306302dd0b29245272d`. The upstream project is licensed under **GNU GPL v3**; its complete source and LICENSE are available in the `screen-recorder/rec-upstream` Git submodule. The Ghostly adaptation patch is maintained in `screen-recorder/patches/apply_ghostly.py`.
+Ghostly Recorder is built from [FluxRecorder](https://github.com/IcradleInnovationsLtd/FluxRecorder), pinned to commit `4ddca4280c5a79a808f759bfe82b6802898b14ce`. FluxRecorder is distributed under the **MIT License**. The upstream source and its license are kept in the `screen-recorder/rec-upstream` Git submodule; the Ghostly branding and startup-adaptation patch is `screen-recorder/patches/apply_ghostly.py`.
 
-## What changes in this build
+## Included functionality
 
-- Keeps the upstream MediaCodec-based hardware recording engine, internal game-audio capture where Android/app policy permits it, microphone capture/mixing, recording vault, settings, floating controls and replay features.
-- Changes the installed application ID to `ru.selteck.ghostly.recorder` and launcher name to **Ghostly Recorder**.
-- Shows a Google AdMob **App Open** ad from a branded startup screen. The build defaults to official Google test IDs; test ads do not earn revenue.
-- Uses a bounded startup wait: if an ad fails to load, the app opens normally. The recorder is not blocked by a network failure.
+This engine brings the Compose UI and recording pipeline from FluxRecorder, including hardware-accelerated recording, configurable capture quality, internal playback audio where supported by Android and by the captured app, microphone recording, recording library, quick controls and floating controls. Features can vary by device and Android version; no fixed FPS is guaranteed on every phone.
 
-## AdMob configuration
+The package ID is `ru.selteck.ghostly.recorder`, and the launcher name is **Ghostly Recorder**. At launch, a branded screen attempts to show a Google AdMob App Open ad. If the ad fails to load, the recorder opens without waiting indefinitely.
 
-For safety, the build uses Google's official test IDs until you add your own values. To serve real ads, configure these **repository Actions variables** on GitHub:
+## Ads
 
-- `GHOSTLY_ADMOB_APP_ID` — your AdMob app ID (`ca-app-pub-…~…`)
-- `GHOSTLY_APP_OPEN_AD_UNIT_ID` — your App Open ad unit ID (`ca-app-pub-…/…`)
+The CI build uses Google's official **test App Open ad** and test App ID by default. Test ads do not generate revenue. Google advises using test IDs during development to avoid invalid traffic or account restrictions: https://developers.google.com/admob/android/test-ads
 
-Do not use live ad IDs for development/testing. Review applicable consent/privacy requirements before distributing a monetized build.
+To configure your own AdMob IDs for a monetized build, add these **Actions variables** in your GitHub repository:
 
-## Build
+- `GHOSTLY_ADMOB_APP_ID`: app ID like `ca-app-pub-1234567890123456~1234567890`
+- `GHOSTLY_APP_OPEN_AD_UNIT_ID`: App Open unit ID like `ca-app-pub-1234567890123456/1234567890`
 
-Clone the repository with submodules, then apply the branding/ad patch and build the upstream-derived app:
+Before enabling live ads, configure the correct consent/privacy flow for the regions in which you distribute the app (including EEA/UK where applicable). Never click production ads while testing.
+
+## Build locally
 
 ```bash
 git clone --recurse-submodules https://github.com/Selteck1/ApkGhostly.git
@@ -28,6 +27,6 @@ python3 screen-recorder/patches/apply_ghostly.py screen-recorder/rec-upstream
 gradle -p screen-recorder/rec-upstream --no-daemon assembleDebug
 ```
 
-The APK is created under `screen-recorder/rec-upstream/app/build/outputs/apk/debug/`. GitHub Actions runs the same patch/build flow and uploads the APK artifact.
+The debug APK will be in `screen-recorder/rec-upstream/app/build/outputs/apk/debug/`. GitHub Actions builds and uploads the APK artifact automatically on changes to the recorder project.
 
-The previous Ghostly implementation remains in `screen-recorder/app` as a fallback reference; the current GitHub Actions artifact is built from the pinned REC-derived project.
+The original Ghostly implementation remains in `screen-recorder/app` as a fallback reference. This derivative project keeps the upstream MIT license notice in the built APK and the complete upstream source in the pinned submodule.
