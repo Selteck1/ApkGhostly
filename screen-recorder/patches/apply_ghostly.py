@@ -98,8 +98,8 @@ def main() -> None:
         legacy_block = gradle[legacy_start:legacy_end + 1] if legacy_end >= 0 else ""
         if 'jvmTarget = "11"' not in legacy_block:
             raise RuntimeError("Found an unexpected kotlinOptions block")
-        line_start = gradle.rfind("\\n", 0, legacy_start) + 1
-        line_end = gradle.find("\\n", legacy_end + 1)
+        line_start = gradle.rfind(chr(10), 0, legacy_start) + 1
+        line_end = gradle.find(chr(10), legacy_end + 1)
         if line_end < 0:
             line_end = len(gradle)
         gradle = gradle[:line_start] + gradle[line_end + 1:]
