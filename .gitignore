@@ -1,9 +1,7 @@
+
 .gradle/
-local.properties
-**/build/
+build/
+run/
+run-server/
 *.iml
 .idea/
-*.jks
-*.keystore
-.env
-.DS_Store

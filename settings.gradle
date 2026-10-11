@@ -1,9 +1,9 @@
+
 pluginManagement {
-    repositories { google(); mavenCentral(); gradlePluginPortal() }
+    repositories {
+        gradlePluginPortal()
+        maven { url = 'https://maven.minecraftforge.net' }
+        mavenCentral()
+    }
 }
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories { google(); mavenCentral() }
-}
-rootProject.name = "Lineup"
-include(":app", ":client")
+rootProject.name = 'GhostlyServer'

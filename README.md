@@ -1,44 +1,28 @@
-# Lineup — конструктор раскидок Standoff 2
 
-В репозитории два Android-приложения:
+# Ghostly Server — Minecraft 1.20.1 Forge
 
-- **Lineup Admin** — редактор под пароль. Создаёт блоки, хранит фотографии и экспортирует пакет публикации.
-- **Lineup для игроков** — показывает блоки, описания и фотографии. Получает свежий каталог из GitHub и скачивает изменённые пакеты без установки нового APK.
+Ghostly Server adds a **Сервер** button to the pause menu (Esc). From its screen, **Открыть доступ** publishes a singleplayer world to LAN. The official Playit Companion mod detects the integrated-server listener and opens a public tunnel.
 
-## Обновление данных через BAT на Windows
+## Important networking note
 
-После установки актуальных APK обычная публикация проходит так:
+A random public IP cannot be manufactured locally. The public address is allocated by Playit.gg. This avoids router port-forwarding in typical home-network setups. On first use, Playit Companion may print a claim URL in Minecraft chat; open it and complete the one-time agent claim. After that, the public address appears in chat and can be shared with friends in other countries.
 
-1. В Lineup Admin добавь или отредактируй блоки и фотографии, затем нажми **Сохранить**.
-2. Нажми **«Обновить данные для пользователей»** и сохрани файл с именем `community.lineup`.
-3. Передай `community.lineup` с телефона на ПК.
-4. Скачай [Lineup-Publish.bat](https://github.com/Selteck1/ApkGhostly/raw/refs/heads/main/tools/Lineup-Publish.bat) и положи BAT рядом с `community.lineup`.
-5. Дважды щёлкни `Lineup-Publish.bat`. Скрипт клонирует актуальную ветку `main` во временную папку, копирует туда пакет, пересчитывает каталог и публикует обновление в GitHub.
-6. Пользователи получают обновлённые блоки и фотографии во время следующей проверки каталога. Новая сборка APK для обычного обновления контента не нужна.
+## Setup
 
-### Что установить на ПК один раз
+- Minecraft Java Edition 1.20.1
+- Forge 1.20.1 (47.4.x)
+- Java 17
+- Install both Ghostly Server and Playit Companion into the same profile's mods folder. The included Windows installer downloads both.
+- Friends need to use the same Minecraft version and the same mods/modpack if the world uses modded blocks or items.
 
-- [Git for Windows](https://git-scm.com/download/win)
-- [Python 3](https://www.python.org/downloads/windows/) — при установке отметь пункт **Add Python to PATH**.
+## Build from source
 
-При первой публикации Git может открыть окно входа GitHub в браузере. Войди в аккаунт, который имеет право записывать в репозиторий `Selteck1/ApkGhostly`. Пароль или токен не нужно вписывать в BAT или APK.
+Requires JDK 17 and Gradle 8.8. Run:
 
-Если BAT сообщает, что файл `community.lineup` не найден, положи его в ту же папку, что и BAT. Если публикация не удалась, окно покажет ошибку — пришли её текст, не удаляя из папки исходные файлы.
+    gradle build --no-daemon
 
-## Telegram-ссылка
+The reobfuscated JAR is written to build/libs/ghostly-server-1.0.0.jar. GitHub Actions builds the JAR and publishes a GitHub release after a commit to main.
 
-Ссылка из настроек Lineup Admin включается в `community.lineup`. При запуске BAT она также публикуется в `content/policy.json`, а приложение игроков получает её при очередной проверке.
+## Attribution
 
-## Когда нужна новая сборка APK
-
-Сборка нужна только для изменения самого приложения — например, добавления новой функции. Добавление, изменение или удаление блоков, описаний и фотографий выполняется через экспорт пакета и BAT.
-
-## Важно при первой установке обновлённого механизма
-
-Если на устройствах установлены старые APK, сначала нужно установить новую версию с поддержкой удалённого каталога. После этого публикации контента выполняются через BAT без пересборки APK. Если Android не разрешит установить тестовую APK поверх старой из-за другой подписи, перед заменой Lineup Admin экспортируй резервную копию `.lineup`.
-
-## Ссылки
-
-- [Сборки Admin и Player](https://github.com/Selteck1/ApkGhostly/actions/workflows/android.yml)
-- [Сборка APK игроков при изменении кода](https://github.com/Selteck1/ApkGhostly/actions/workflows/client-release.yml)
-- [Репозиторий](https://github.com/Selteck1/ApkGhostly)
+The public tunnel is provided by Playit.gg. The installer fetches the official MIT-licensed Playit Companion Forge mod by playit-cloud. Its code is not embedded in this project's JAR.

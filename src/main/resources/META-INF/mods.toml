@@ -1,0 +1,32 @@
+
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="ghostlyserver"
+version="1.0.0"
+displayName="Ghostly Server"
+authors="Selteck"
+description='''Adds a Server button to the pause menu and opens a singleplayer world for friends through Playit Companion.'''
+
+[[dependencies.ghostlyserver]]
+modId="forge"
+mandatory=true
+versionRange="[47.4.0,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.ghostlyserver]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.20.2)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.ghostlyserver]]
+modId="playit_companion"
+mandatory=false
+versionRange="[0.1.1,)"
+ordering="AFTER"
+side="CLIENT"
