@@ -2,7 +2,9 @@ package ru.selteck.ghostly.recorder
 
 import android.Manifest
 import android.app.Activity
+import android.app.StatusBarManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -10,6 +12,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.Icon
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -32,10 +35,13 @@ class MainActivity : Activity() {
 
     private lateinit var resolutionSpinner: Spinner
     private lateinit var fpsSpinner: Spinner
+    private lateinit var orientationSpinner: Spinner
     private lateinit var bitrateSeek: SeekBar
     private lateinit var bitrateValue: TextView
     private lateinit var micSwitch: Switch
+    private lateinit var hevcSwitch: Switch
     private lateinit var recordButton: Button
+    private lateinit var quickSettingsButton: Button
     private lateinit var statusTitle: TextView
     private lateinit var statusDetail: TextView
 
@@ -67,6 +73,9 @@ class MainActivity : Activity() {
         buildUi()
         restoreSettings()
         updateStateUi(if (isRecording) "Запись уже идёт" else "Всё готово к записи")
+        if (intent?.action == ACTION_FROM_TILE && !isRecording) {
+            window.decorView.post { onRecordButtonClick() }
+        }
     }
 
     override fun onResume() {
@@ -83,6 +92,14 @@ class MainActivity : Activity() {
         }
         isRecording = prefs.getBoolean(KEY_RECORDING, false)
         updateStateUi(if (isRecording) "Запись уже идёт" else "Всё готово к записи")
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent != null) setIntent(intent)
+        if (intent?.action == ACTION_FROM_TILE && !isRecording) {
+            window.decorView.post { onRecordButtonClick() }
+        }
     }
 
     override fun onPause() {
@@ -163,26 +180,47 @@ class MainActivity : Activity() {
         qualityCard.addView(label("Частота кадров", 13f, C_MUTED), margin(top = 15, bottom = 7))
         fpsSpinner = makeSpinner(listOf("30 FPS · меньше нагрузка", "60 FPS · плавно", "90 FPS · высокая частота", "120 FPS · максимум"))
         qualityCard.addView(fpsSpinner, matchWrap())
+
+        qualityCard.addView(label("Ориентация записи", 13f, C_MUTED), margin(top = 15, bottom = 7))
+        orientationSpinner = makeSpinner(listOf(
+            "Альбомная · для игр",
+            "Книжная · вертикальное видео",
+            "Авто · по положению экрана"
+        ))
+        qualityCard.addView(orientationSpinner, matchWrap())
+
+        qualityCard.addView(label("Видеокодек", 13f, C_MUTED), margin(top = 15, bottom = 7))
+        hevcSwitch = Switch(this).apply {
+            text = "H.265 / HEVC"
+            textSize = 14f
+            setTextColor(C_TEXT)
+            isChecked = true
+            thumbTintList = android.content.res.ColorStateList.valueOf(C_TEXT)
+            trackTintList = android.content.res.ColorStateList.valueOf(C_ACCENT)
+        }
+        qualityCard.addView(hevcSwitch)
+        qualityCard.addView(label("HEVC помогает сохранить детали при том же битрейте, если телефон поддерживает аппаратное кодирование. Иначе будет H.264.", 11f, C_MUTED), margin(top = 2))
+
         qualityCard.addView(label("Битрейт", 13f, C_MUTED), margin(top = 17, bottom = 3))
         val bitrateRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        bitrateRow.addView(label("2 Мбит/с", 11f, C_MUTED), LinearLayout.LayoutParams(0, dp(22), 1f))
-        bitrateValue = label("8 Мбит/с", 15f, C_ACCENT, true)
+        bitrateRow.addView(label("4 Мбит/с", 11f, C_MUTED), LinearLayout.LayoutParams(0, dp(22), 1f))
+        bitrateValue = label("28 Мбит/с", 15f, C_ACCENT, true)
         bitrateRow.addView(bitrateValue)
-        bitrateRow.addView(label("12 Мбит/с", 11f, C_MUTED).apply {
+        bitrateRow.addView(label("50 Мбит/с", 11f, C_MUTED).apply {
             gravity = Gravity.END
         }, LinearLayout.LayoutParams(0, dp(22), 1f))
         qualityCard.addView(bitrateRow, margin(top = 8))
         bitrateSeek = SeekBar(this).apply {
-            max = 10
-            progress = 6
+            max = 23
+            progress = 12
             progressTintList = android.content.res.ColorStateList.valueOf(C_ACCENT)
             thumbTintList = android.content.res.ColorStateList.valueOf(C_ACCENT)
         }
         qualityCard.addView(bitrateSeek, margin(top = 0))
-        qualityCard.addView(label("Выше битрейт = чётче картинка и больше размер файла.", 11f, C_MUTED), margin(top = 2))
+        qualityCard.addView(label("1080p/90 FPS: попробуй 25–35 Мбит/с. 2K: 35–50 Мбит/с. Если игра начнёт терять FPS, снизь битрейт или отключи HEVC.", 11f, C_MUTED), margin(top = 2))
         page.addView(qualityCard, margin(bottom = 18))
 
         val audioCard = card()
@@ -208,7 +246,7 @@ class MainActivity : Activity() {
 
         page.addView(label("ПРОФИЛЬ НАГРУЗКИ", 12f, C_MUTED, true), margin(bottom = 8))
         val tipCard = card()
-        tipCard.addView(label("Для игры начни с 720p / 60 FPS / 4–6 Мбит/с. 1080p, 2K и 90/120 FPS зависят от аппаратного кодировщика и температуры телефона. Никакая запись не гарантирует полное отсутствие просадки FPS.", 12f, C_MUTED))
+        tipCard.addView(label("Для Standoff 2 попробуй: Альбомная · 1080p · 90 FPS · 25–35 Мбит/с · HEVC. Начни запись и сразу переключись в игру. Для 2K поставь 35–50 Мбит/с. Если FPS проседает, отключи HEVC или снизь до 60 FPS.", 12f, C_MUTED))
         page.addView(tipCard, margin(bottom = 22))
 
         recordButton = Button(this).apply {
@@ -229,7 +267,7 @@ class MainActivity : Activity() {
 
         bitrateSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val mbps = progress + 2
+                val mbps = 4 + progress * 2
                 bitrateValue.text = "$mbps Мбит/с"
                 if (fromUser) prefs.edit().putInt(KEY_BITRATE, mbps).apply()
             }
@@ -241,6 +279,12 @@ class MainActivity : Activity() {
         }
         fpsSpinner.onItemSelectedListener = simpleSelection { position ->
             prefs.edit().putInt(KEY_FPS, position).apply()
+        }
+        orientationSpinner.onItemSelectedListener = simpleSelection { position ->
+            prefs.edit().putInt(KEY_ORIENTATION, position).apply()
+        }
+        hevcSwitch.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean(KEY_HEVC, checked).apply()
         }
         micSwitch.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean(KEY_MIC, checked).apply()
@@ -255,10 +299,20 @@ class MainActivity : Activity() {
     }
 
     private fun restoreSettings() {
+        // Existing installs stored a 2–12 Mbit/s slider value. Move that old
+        // maximum to a better starting point once, without overriding later choices.
+        if (!prefs.getBoolean(KEY_QUALITY_MIGRATED, false)) {
+            val oldBitrate = prefs.getInt(KEY_BITRATE, 28)
+            if (oldBitrate <= 12) prefs.edit().putInt(KEY_BITRATE, 28).apply()
+            prefs.edit().putBoolean(KEY_QUALITY_MIGRATED, true).apply()
+        }
         resolutionSpinner.setSelection(prefs.getInt(KEY_RESOLUTION, 2).coerceIn(0, 3))
         fpsSpinner.setSelection(prefs.getInt(KEY_FPS, 1).coerceIn(0, 3))
-        bitrateSeek.progress = (prefs.getInt(KEY_BITRATE, 6) - 2).coerceIn(0, 10)
+        orientationSpinner.setSelection(prefs.getInt(KEY_ORIENTATION, 0).coerceIn(0, 2))
+        bitrateSeek.progress = ((prefs.getInt(KEY_BITRATE, 28).coerceIn(4, 50) - 4) / 2).coerceIn(0, 23)
         micSwitch.isChecked = prefs.getBoolean(KEY_MIC, true)
+        hevcSwitch.isChecked = prefs.getBoolean(KEY_HEVC, true)
+        bitrateValue.text = "${4 + bitrateSeek.progress * 2} Мбит/с"
     }
 
     private fun onRecordButtonClick() {
@@ -270,6 +324,28 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MIC)
         } else {
             requestScreenCapturePermission()
+        }
+    }
+
+    private fun requestQuickSettingsTile() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            val statusBar = getSystemService(StatusBarManager::class.java)
+            statusBar?.requestAddTileService(
+                ComponentName(this, RecorderTileService::class.java),
+                "Ghostly Recorder",
+                Icon.createWithResource(this, android.R.drawable.ic_menu_camera),
+                mainExecutor
+            ) { result ->
+                val message = when (result) {
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> "Ghostly Recorder добавлен в быстрые настройки"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> "Плитка Ghostly Recorder уже добавлена"
+                    StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED -> "Добавление отменено"
+                    else -> "Не удалось добавить плитку. Попробуй через меню изменения быстрых настроек."
+                }
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(this, "Открой шторку Android → Изменить (карандаш) → добавь Ghostly Recorder.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -293,8 +369,14 @@ class MainActivity : Activity() {
             putExtra(ScreenRecorderService.EXTRA_PROJECTION_DATA, data)
             putExtra(ScreenRecorderService.EXTRA_RESOLUTION, RESOLUTION_SHORT_EDGES[resolutionSpinner.selectedItemPosition])
             putExtra(ScreenRecorderService.EXTRA_FPS, FPS_VALUES[fpsSpinner.selectedItemPosition])
-            putExtra(ScreenRecorderService.EXTRA_BITRATE, (bitrateSeek.progress + 2) * 1_000_000)
+            putExtra(ScreenRecorderService.EXTRA_BITRATE, (4 + bitrateSeek.progress * 2) * 1_000_000)
             putExtra(ScreenRecorderService.EXTRA_MIC, micSwitch.isChecked)
+            putExtra(ScreenRecorderService.EXTRA_HEVC, hevcSwitch.isChecked)
+            putExtra(ScreenRecorderService.EXTRA_ORIENTATION, when (orientationSpinner.selectedItemPosition) {
+                0 -> ORIENTATION_LANDSCAPE
+                1 -> ORIENTATION_PORTRAIT
+                else -> ORIENTATION_AUTO
+            })
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent) else startService(serviceIntent)
         statusTitle.text = "ПОДГОТОВКА ЗАПИСИ…"
@@ -323,8 +405,10 @@ class MainActivity : Activity() {
         recordButton.background = rounded(if (active) C_RED else C_ACCENT_DARK, if (active) C_RED else C_ACCENT_DARK, 18)
         resolutionSpinner.isEnabled = !active
         fpsSpinner.isEnabled = !active
+        orientationSpinner.isEnabled = !active
         bitrateSeek.isEnabled = !active
         micSwitch.isEnabled = !active
+        hevcSwitch.isEnabled = !active
     }
 
     private fun card(): LinearLayout = LinearLayout(this).apply {
@@ -405,6 +489,14 @@ class MainActivity : Activity() {
         private const val KEY_FPS = "fps_index"
         private const val KEY_BITRATE = "bitrate_mbps"
         private const val KEY_MIC = "microphone_enabled"
+        private const val KEY_HEVC = "hevc_enabled"
+        private const val KEY_ORIENTATION = "orientation_index"
+        private const val KEY_QUALITY_MIGRATED = "quality_slider_v2_migrated"
+
+        private const val ORIENTATION_LANDSCAPE = 0
+        private const val ORIENTATION_PORTRAIT = 1
+        private const val ORIENTATION_AUTO = 2
+        const val ACTION_FROM_TILE = "ru.selteck.ghostly.recorder.action.FROM_TILE"
 
         private val RESOLUTION_SHORT_EDGES = intArrayOf(480, 720, 1080, 1440)
         private val FPS_VALUES = intArrayOf(30, 60, 90, 120)
