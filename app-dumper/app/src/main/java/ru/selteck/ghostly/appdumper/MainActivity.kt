@@ -125,7 +125,7 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(C_TEXT)
             setHintTextColor(C_MUTED)
-            singleLine = true
+            isSingleLine = true
             setPadding(dp(14), dp(3), dp(14), dp(3))
             background = rounded(C_INPUT, C_STROKE, 14)
         }
