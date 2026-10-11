@@ -123,7 +123,12 @@ class ScreenRecorderService : Service() {
         createOutputFile()
         val descriptor = outputDescriptor ?: throw IllegalStateException("Не удалось открыть файл для записи")
 
-        val mediaRecorder = MediaRecorder(this)
+        val mediaRecorder = if (Build.VERSION.SDK_INT >= 31) {
+            MediaRecorder(this)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }
         recorder = mediaRecorder
         if (micEnabled) {
             mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC)
