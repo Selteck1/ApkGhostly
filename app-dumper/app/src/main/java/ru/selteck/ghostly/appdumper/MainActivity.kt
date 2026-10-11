@@ -118,7 +118,8 @@ class MainActivity : Activity() {
         root.addView(brandRow)
 
         root.addView(label("Выбери приложение", 27f, C_TEXT, true), margin(top = 22, bottom = 5))
-        root.addView(label("Экспортируй установленный APK или полный комплект split-APK.", 13f, C_MUTED), margin(bottom = 14))
+        root.addView(label("Распакуй папки ресурсов, assets, res и lib из всех установленных APK-частей.", 13f, C_MUTED), margin(bottom = 6))
+        root.addView(label("Приватные данные игры и скачанные после установки файлы Android не открывает обычному приложению.", 11f, C_MUTED), margin(bottom = 14))
 
         searchField = EditText(this).apply {
             hint = "Поиск по названию или package name"
@@ -174,7 +175,7 @@ class MainActivity : Activity() {
         footer.addView(downloadButton, margin(top = 12))
         statusTitle = label("ГОТОВО", 11f, C_GREEN, true)
         footer.addView(statusTitle, margin(top = 10))
-        statusDetail = label("Файлы будут сохранены в Downloads/Ghostly APK Dumps.", 11f, C_MUTED)
+        statusDetail = label("ZIP с извлечёнными папками сохраняется в Downloads/Ghostly APK Dumps.", 11f, C_MUTED)
         footer.addView(statusDetail, margin(top = 3))
         root.addView(footer, margin(top = 10))
 
@@ -322,8 +323,8 @@ class MainActivity : Activity() {
             return
         }
         selectedLabel.text = app.label
-        selectedPackage.text = "${app.packageName}\nВерсия ${app.versionName} · ${formatSize(app.apkBytes)}"
-        downloadButton.text = if (app.apkPaths.size > 1) "↓   СКАЧАТЬ ПОЛНЫЙ ДАМП (.ZIP)" else "↓   СКАЧАТЬ APK"
+        selectedPackage.text = "${app.packageName}\nВерсия ${app.versionName} · ${formatSize(app.apkBytes)} · ${app.apkPaths.size} APK-частей"
+        downloadButton.text = "↓   РАСПАКОВАТЬ СОДЕРЖИМОЕ (.ZIP)"
         downloadButton.isEnabled = !exporting
     }
 
@@ -357,12 +358,10 @@ class MainActivity : Activity() {
     private fun exportPackage(app: InstalledApp, sources: List<String>): ExportResult {
         val safeLabel = app.label.replace(Regex("[^\\p{L}\\p{N}._-]+"), "_").trim('_', '.', '-').ifBlank { "app" }.take(70)
         val safeVersion = app.versionName.replace(Regex("[^A-Za-z0-9._-]+"), "_").take(32).ifBlank { "unknown" }
-        val isSplit = sources.size > 1
-        val fileName = if (isSplit) "${safeLabel}_${safeVersion}_dump.zip" else "${safeLabel}_${safeVersion}.apk"
-        val mime = if (isSplit) "application/zip" else "application/vnd.android.package-archive"
+        val fileName = "${safeLabel}_${safeVersion}_contents.zip"
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-            put(MediaStore.Downloads.MIME_TYPE, mime)
+            put(MediaStore.Downloads.MIME_TYPE, "application/zip")
             put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Ghostly APK Dumps")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
@@ -370,48 +369,132 @@ class MainActivity : Activity() {
             ?: throw IOException("Не удалось создать файл в Downloads")
 
         try {
-            val output = contentResolver.openOutputStream(uri, "w") ?: throw IOException("Не удалось открыть файл для записи")
+            val output = contentResolver.openOutputStream(uri, "w")
+                ?: throw IOException("Не удалось открыть файл для записи")
+            var extractedFiles = 0
+            var extractedBytes = 0L
+            var skippedEntries = 0
+
             output.use { stream ->
-                if (isSplit) {
-                    ZipOutputStream(stream.buffered()).use { zip ->
-                        val usedNames = mutableSetOf<String>()
-                        sources.forEachIndexed { index, sourcePath ->
-                            val sourceFile = File(sourcePath)
-                            var entryName = if (index == 0) "base.apk" else sourceFile.name
-                            var suffix = 2
-                            while (!usedNames.add(entryName)) {
-                                entryName = "${sourceFile.nameWithoutExtension}_${suffix}.apk"
-                                suffix++
+                ZipOutputStream(stream.buffered()).use { zip ->
+                    val usedOutputNames = mutableSetOf<String>()
+                    val sourcesSummary = mutableListOf<String>()
+
+                    sources.forEachIndexed { index, sourcePath ->
+                        val apkFile = File(sourcePath)
+                        val partFolder = if (index == 0) {
+                            "package/base"
+                        } else {
+                            "package/split_${index}_${safeSegment(apkFile.nameWithoutExtension)}"
+                        }
+                        sourcesSummary.add("$partFolder <= ${apkFile.name}")
+
+                        java.util.zip.ZipFile(apkFile).use { apkZip ->
+                            val entries = apkZip.entries()
+                            while (entries.hasMoreElements()) {
+                                val entry = entries.nextElement()
+                                val originalPath = safeArchivePath(entry.name)
+                                if (originalPath == null) {
+                                    skippedEntries++
+                                    continue
+                                }
+
+                                val fullPath = uniqueZipEntryName(
+                                    "$partFolder/$originalPath",
+                                    entry.isDirectory,
+                                    usedOutputNames
+                                )
+                                val outputEntry = ZipEntry(fullPath)
+                                if (entry.time > 0L) outputEntry.time = entry.time
+                                zip.putNextEntry(outputEntry)
+
+                                if (!entry.isDirectory) {
+                                    apkZip.getInputStream(entry).use { input ->
+                                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                                        while (true) {
+                                            val count = input.read(buffer)
+                                            if (count < 0) break
+                                            zip.write(buffer, 0, count)
+                                            extractedBytes += count
+                                        }
+                                    }
+                                    extractedFiles++
+                                }
+                                zip.closeEntry()
                             }
-                            zip.putNextEntry(ZipEntry(entryName))
-                            BufferedInputStream(FileInputStream(sourceFile)).use { it.copyTo(zip) }
-                            zip.closeEntry()
                         }
-                        zip.putNextEntry(ZipEntry("dump-info.txt"))
-                        val info = buildString {
-                            appendLine("Ghostly APK Dump")
-                            appendLine("App: ${app.label}")
-                            appendLine("Package: ${app.packageName}")
-                            appendLine("Version: ${app.versionName} (${app.versionCode})")
-                            appendLine("APK parts: ${sources.size}")
-                            appendLine()
-                            appendLine("Contains installed package APK files only.")
-                            appendLine("Does not contain private app data, saves, memory or runtime assets.")
-                        }
-                        zip.write(info.toByteArray(Charsets.UTF_8))
-                        zip.closeEntry()
                     }
-                } else {
-                    BufferedInputStream(FileInputStream(File(sources.first()))).use { it.copyTo(stream) }
+
+                    zip.putNextEntry(ZipEntry("dump-info.txt"))
+                    val info = buildString {
+                        appendLine("Ghostly Extracted APK Contents")
+                        appendLine("App: ${app.label}")
+                        appendLine("Package: ${app.packageName}")
+                        appendLine("Version: ${app.versionName} (${app.versionCode})")
+                        appendLine("APK parts inspected: ${sources.size}")
+                        appendLine("Files extracted: $extractedFiles")
+                        appendLine("Uncompressed bytes written: $extractedBytes")
+                        appendLine("Unsafe entries skipped: $skippedEntries")
+                        appendLine()
+                        appendLine("Source APK parts:")
+                        sourcesSummary.forEach { appendLine("  $it") }
+                        appendLine()
+                        appendLine("Each APK's own ZIP contents are unpacked under package/base/ or package/split_N_name/.")
+                        appendLine("This includes resources, assets, native libraries and other entries when present in the installed APKs.")
+                        appendLine("Files that are themselves proprietary archives (for example .pak or .obb files) remain as files and are not decrypted or recursively unpacked.")
+                        appendLine("Private app storage, runtime-downloaded files, saved data and process memory are not included.")
+                    }
+                    zip.write(info.toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
                 }
             }
+
             contentResolver.update(uri, ContentValues().apply {
                 put(MediaStore.Downloads.IS_PENDING, 0)
             }, null, null)
-            return ExportResult(true, "Сохранено: Downloads/Ghostly APK Dumps/$fileName")
+            return ExportResult(
+                true,
+                "Распаковано файлов: $extractedFiles. ZIP сохранён: Downloads/Ghostly APK Dumps/$fileName"
+            )
         } catch (e: Exception) {
             try { contentResolver.delete(uri, null, null) } catch (_: Exception) { }
             throw e
+        }
+    }
+
+    private fun safeSegment(value: String): String =
+        value.replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_', '.', '-').ifBlank { "part" }.take(70)
+
+    /**
+     * Preserve package folder paths but reject absolute paths and parent traversal
+     * from an entry, so an APK entry cannot escape its own directory in the ZIP.
+     */
+    private fun safeArchivePath(raw: String): String? {
+        val path = raw.replace('\\', '/')
+        if (path.startsWith("/") || Regex("^[A-Za-z]:").containsMatchIn(path)) return null
+        val parts = path.split('/').filter { it.isNotEmpty() && it != "." }
+        if (parts.isEmpty() || parts.any { it == ".." }) return null
+        return parts.joinToString("/") + if (raw.endsWith("/") && parts.isNotEmpty()) "/" else ""
+    }
+
+    private fun uniqueZipEntryName(
+        requested: String,
+        directory: Boolean,
+        usedNames: MutableSet<String>
+    ): String {
+        if (usedNames.add(requested)) return requested
+        if (directory) return requested
+        val dot = requested.lastIndexOf('.')
+        val parent = if (requested.contains('/')) requested.substringBeforeLast('/') + "/" else ""
+        val leaf = requested.substringAfterLast('/')
+        val base = if (dot > requested.lastIndexOf('/')) leaf.substringBeforeLast('.') else leaf
+        val extension = if (dot > requested.lastIndexOf('/')) leaf.substringAfterLast('.') else ""
+        var suffix = 2
+        while (true) {
+            val candidateLeaf = if (extension.isEmpty()) "${base}_${suffix}" else "${base}_${suffix}.$extension"
+            val candidate = parent + candidateLeaf
+            if (usedNames.add(candidate)) return candidate
+            suffix++
         }
     }
 
