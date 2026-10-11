@@ -360,10 +360,10 @@ class MainActivity : Activity() {
                     minHeight = dp(48)
                 }
 
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View =
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
                 makeLabel(getItem(position).orEmpty(), parent, false)
 
-            override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup?): View =
+            override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
                 makeLabel(getItem(position).orEmpty(), parent, true)
         }
         spinner.adapter = adapter
