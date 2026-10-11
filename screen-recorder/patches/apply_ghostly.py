@@ -113,6 +113,8 @@ def main() -> None:
         "    }\n}\n\ndependencies {",
         "Kotlin compiler options DSL",
     )
+    # Persist Kotlin DSL migration before Gradle reads the project configuration.
+    write_text(gradle_path, gradle)
 
     # Google Mobile Ads 25.5.0 includes Kotlin 2.3 metadata. Upgrade the upstream
     # Kotlin/Compose compiler plugins to a compatible release before compiling.
