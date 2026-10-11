@@ -197,8 +197,8 @@ def main() -> None:
         r"(?m)^dependencies \{\s*$",
         'dependencies {\n'
         '    // Ghostly launch ads (Google test IDs until the owner configures AdMob)\n'
-        '    implementation("com.google.android.gms:play-services-ads:24.8.0")\n'
-        '    implementation("com.google.android.ump:user-messaging-platform:3.2.0")',
+        '    implementation("com.google.android.gms:play-services-ads:24.0.0")\n'
+        '    implementation("com.google.android.ump:user-messaging-platform:3.1.0")',
         "Ad SDK dependencies",
     )
 
