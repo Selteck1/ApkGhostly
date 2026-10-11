@@ -110,12 +110,12 @@ class ScreenRecorderService : Service() {
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
         (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(metrics)
-        val requestedLongEdge = startIntent.getIntExtra(EXTRA_RESOLUTION, 1920)
+        val requestedShortEdge = startIntent.getIntExtra(EXTRA_RESOLUTION, 1080)
         val requestedFps = startIntent.getIntExtra(EXTRA_FPS, 60)
         val bitrate = startIntent.getIntExtra(EXTRA_BITRATE, 6_000_000).coerceIn(2_000_000, 12_000_000)
         val displayWidth = metrics.widthPixels.coerceAtLeast(2)
         val displayHeight = metrics.heightPixels.coerceAtLeast(2)
-        val parameters = selectVideoParameters(displayWidth, displayHeight, requestedLongEdge, requestedFps)
+        val parameters = selectVideoParameters(displayWidth, displayHeight, requestedShortEdge, requestedFps)
         chosenWidth = parameters.first
         chosenHeight = parameters.second
         chosenFps = parameters.third
@@ -180,27 +180,29 @@ class ScreenRecorderService : Service() {
     private fun selectVideoParameters(
         screenWidth: Int,
         screenHeight: Int,
-        requestedLongEdge: Int,
+        requestedShortEdge: Int,
         requestedFps: Int
     ): Triple<Int, Int, Int> {
-        val longScreenEdge = maxOf(screenWidth, screenHeight)
-        val maxRequestedEdge = minOf(requestedLongEdge, longScreenEdge)
-        val targetEdges = listOf(maxRequestedEdge, 1920, 1280, 854)
+        // Presets use the short edge: 720p on a landscape screen is 1280x720,
+        // while portrait screens preserve their native aspect ratio.
+        val shortScreenEdge = minOf(screenWidth, screenHeight)
+        val maxRequestedShortEdge = minOf(requestedShortEdge, shortScreenEdge)
+        val targetEdges = listOf(maxRequestedShortEdge, 1080, 720, 480)
             .distinct()
-            .filter { it <= maxRequestedEdge }
-            .ifEmpty { listOf(minOf(854, longScreenEdge)) }
+            .filter { it <= maxRequestedShortEdge }
+            .ifEmpty { listOf(minOf(480, shortScreenEdge)) }
 
         var chosenSize: Pair<Int, Int>? = null
-        for (edge in targetEdges) {
+        for (shortEdge in targetEdges) {
             val ratio = screenWidth.toDouble() / screenHeight.toDouble()
             var width: Int
             var height: Int
             if (screenWidth >= screenHeight) {
-                width = edge
-                height = (edge / ratio).toInt()
+                height = shortEdge
+                width = (shortEdge * ratio).toInt()
             } else {
-                height = edge
-                width = (edge * ratio).toInt()
+                width = shortEdge
+                height = (shortEdge / ratio).toInt()
             }
             width = (width.coerceAtLeast(2) / 2) * 2
             height = (height.coerceAtLeast(2) / 2) * 2
@@ -213,9 +215,11 @@ class ScreenRecorderService : Service() {
         val (width, height) = chosenSize ?: run {
             val ratio = screenWidth.toDouble() / screenHeight.toDouble()
             if (screenWidth >= screenHeight) {
-                854 to (854 / ratio).toInt().coerceAtLeast(2)
+                val h = minOf(480, shortScreenEdge)
+                (h * ratio).toInt().coerceAtLeast(2) to h.coerceAtLeast(2)
             } else {
-                (854 * ratio).toInt().coerceAtLeast(2) to 854
+                val w = minOf(480, shortScreenEdge)
+                w.coerceAtLeast(2) to (w / ratio).toInt().coerceAtLeast(2)
             }
         }
 
@@ -412,7 +416,7 @@ class ScreenRecorderService : Service() {
 
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_PROJECTION_DATA = "projection_data"
-        const val EXTRA_RESOLUTION = "resolution_long_edge"
+        const val EXTRA_RESOLUTION = "resolution_short_edge"
         const val EXTRA_FPS = "fps"
         const val EXTRA_BITRATE = "bitrate"
         const val EXTRA_MIC = "mic_enabled"
