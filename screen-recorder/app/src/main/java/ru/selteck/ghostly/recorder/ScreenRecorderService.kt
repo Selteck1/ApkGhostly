@@ -244,7 +244,7 @@ class ScreenRecorderService : Service() {
         if (encoders.isEmpty()) return true
         return encoders.any { info ->
             try {
-                info.getCapabilitiesForType("video/avc").videoCapabilities.areSizeSupported(width, height)
+                info.getCapabilitiesForType("video/avc").videoCapabilities.isSizeSupported(width, height)
             } catch (_: Exception) {
                 false
             }
