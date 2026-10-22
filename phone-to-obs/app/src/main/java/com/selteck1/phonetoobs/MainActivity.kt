@@ -11,9 +11,9 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
     private lateinit var url: EditText
     private lateinit var status: TextView
     private val capturePermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
