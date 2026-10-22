@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -35,3 +35,15 @@ jobs:
           path: phone-to-obs/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish APK release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: phone-to-obs-v0.1.0
+          name: PhoneToOBS v0.1.0
+          prerelease: true
+          body: |
+            Initial PhoneToOBS Android streaming MVP.
+            Build artifact: debug APK. Device compatibility and stream stability still require testing.
+          files: phone-to-obs/app/build/outputs/apk/debug/app-debug.apk
